@@ -71,16 +71,40 @@ Drop-in replacement for `DomeClient`. Supports both platforms:
 # Polymarket
 await dome.polymarket.get_market_price({"token_id": "..."})
 await dome.polymarket.get_market({"token_id": "..."})
+await dome.polymarket.get_markets({"status": "open", "limit": 10})  # Market discovery!
 await dome.polymarket.get_orderbook_history({"token_id": "..."})
 await dome.polymarket.get_trade_history({"token_id": "..."})
 dome.polymarket.buy(token_id, quantity, price)
 dome.polymarket.sell(token_id, quantity, price)
 
-# Kalshi (same interface)
-await dome.kalshi.get_market_price({"token_id": "..."})
-dome.kalshi.buy(token_id, quantity, price)
-dome.kalshi.sell(token_id, quantity, price)
+# Kalshi
+await dome.kalshi.get_markets({"status": "open", "limit": 10})
+dome.kalshi.buy(ticker, quantity, price)
+dome.kalshi.sell(ticker, quantity, price)
 ```
+
+### Market Discovery (Historical)
+
+The `get_markets()` method filters results to prevent **lookahead bias**:
+
+```python
+# At backtest time Oct 15, 2024 (before election):
+response = await dome.polymarket.get_markets({"status": "open", "min_volume": 1000000})
+
+for market in response.markets:
+    print(market.title)
+    print(market.historical_status)  # "open" or "closed" at backtest time
+    print(market.was_resolved)       # False - election hadn't happened yet
+    print(market.winning_side)       # None - outcome hidden!
+```
+
+**Key behaviors:**
+- Markets with `start_time > backtest_time` are excluded (didn't exist yet)
+- `historical_status` reflects status AT backtest time, not current status
+- `winning_side` is `None` if market wasn't resolved at backtest time
+- `was_resolved` tells you if outcome was known at backtest time
+
+This lets you build strategies that discover markets dynamically without knowing the future!
 
 ### BacktestRunner
 

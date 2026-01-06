@@ -30,3 +30,5 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Tests (local only)
+tests/

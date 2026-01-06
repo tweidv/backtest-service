@@ -1,2 +1,8 @@
-from .client import DomeBacktestClient
+from .client import (
+    DomeBacktestClient,
+    HistoricalMarket,
+    HistoricalMarketsResponse,
+    HistoricalKalshiMarket,
+    HistoricalKalshiMarketsResponse,
+)
 
