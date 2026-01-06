@@ -9,40 +9,43 @@ import asyncio
 import os
 from decimal import Decimal
 
-from backtest_service import DomeBacktestClient, BacktestRunner, Portfolio
+from backtest_service import BacktestRunner
 
 
-# Example Polymarket token - "Will Bitcoin hit $100k in 2024?" YES token
-# You can find token IDs via Dome API or Polymarket's Gamma API
+# Trump 2024 Election Market - YES token
 TOKEN_ID = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
 
 
-async def my_strategy(dome: DomeBacktestClient, portfolio: Portfolio):
-    """Simple strategy: buy on first tick, sell when price > 0.65"""
+async def simple_strategy(dome, portfolio):
+    """Buy low, sell high."""
     try:
         price_data = await dome.polymarket.get_market_price({"token_id": TOKEN_ID})
         price = Decimal(str(price_data.price))
-        print(f"  Price: {price}")
         
-        # Buy if we have no position and have cash
-        if TOKEN_ID not in portfolio.positions and portfolio.cash > 100:
-            dome.polymarket.buy(TOKEN_ID, quantity=Decimal(10), price=price)
-            print(f"  -> BUY 10 @ {price}")
+        # Buy if cheap and we have cash
+        if price < Decimal("0.55") and portfolio.cash > 500:
+            qty = (Decimal("500") / price).quantize(Decimal("1"))
+            dome.polymarket.buy(TOKEN_ID, qty, price)
+            print(f"  BUY {qty} @ {price:.4f}")
         
-        # Sell if price > 0.65 and we have position
-        elif price > Decimal("0.65") and portfolio.positions.get(TOKEN_ID, 0) > 0:
-            dome.polymarket.sell(TOKEN_ID, quantity=portfolio.positions[TOKEN_ID], price=price)
-            print(f"  -> SELL @ {price}")
+        # Sell if expensive and we have position
+        elif price > Decimal("0.65") and TOKEN_ID in portfolio.positions:
+            qty = portfolio.positions[TOKEN_ID]
+            dome.polymarket.sell(TOKEN_ID, qty, price)
+            print(f"  SELL {qty} @ {price:.4f}")
+        
+        else:
+            print(f"  HOLD @ {price:.4f}")
     
     except Exception as e:
         print(f"  Error: {e}")
 
 
-async def get_prices(dome: DomeBacktestClient):
-    """Get current prices for portfolio valuation"""
+async def get_prices(dome):
+    """Get prices for portfolio valuation."""
     try:
-        price_data = await dome.polymarket.get_market_price({"token_id": TOKEN_ID})
-        return {TOKEN_ID: Decimal(str(price_data.price))}
+        data = await dome.polymarket.get_market_price({"token_id": TOKEN_ID})
+        return {TOKEN_ID: Decimal(str(data.price))}
     except:
         return {}
 
@@ -53,25 +56,32 @@ async def main():
         print("Set DOME_API_KEY environment variable")
         return
     
-    # Short test: just 3 time steps (3 hours)
+    print("=" * 50)
+    print("BACKTEST EXAMPLE")
+    print("=" * 50)
+    
+    # 24-hour backtest during election week
     runner = BacktestRunner(
         api_key=api_key,
-        start_time=1730000000,  # Oct 27, 2024 (recent date with data)
-        end_time=1730010800,    # ~3 hours later
-        step=3600,              # 1 hour
-        initial_cash=Decimal(10000),
+        start_time=1729800000,  # Oct 24, 2024
+        end_time=1729886400,    # Oct 25, 2024
+        step=3600,              # 1 hour intervals
+        initial_cash=Decimal("10000"),
     )
     
-    print("Starting backtest...")
-    result = await runner.run(my_strategy, get_prices)
+    print(f"Period: Oct 24-25, 2024")
+    print(f"Strategy: Buy < $0.55, Sell > $0.65")
+    print("-" * 50)
     
-    print(f"\n=== Results ===")
-    print(f"Initial: ${result.initial_cash}")
-    print(f"Final:   ${result.final_value}")
-    print(f"Return:  {result.total_return_pct:.2f}%")
-    print(f"Trades:  {len(result.trades)}")
+    result = await runner.run(simple_strategy, get_prices)
+    
+    print("-" * 50)
+    print(f"Initial:  ${result.initial_cash}")
+    print(f"Final:    ${result.final_value:.2f}")
+    print(f"Return:   {result.total_return_pct:+.2f}%")
+    print(f"Trades:   {len(result.trades)}")
+    print("=" * 50)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-

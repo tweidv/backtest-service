@@ -1,13 +1,36 @@
 # Backtest Service
 
-Minimal backtesting for Kalshi/Polymarket via Dome API.
+A minimal backtesting framework for **Polymarket** and **Kalshi** prediction markets using the [Dome API](https://domeapi.io).
 
-**Core idea**: Swap your `DomeClient` import with `DomeBacktestClient` — it injects `at_time` into all API calls to replay historical data.
+## How It Works
 
-## Install
+Swap your `DomeClient` import with `DomeBacktestClient` — it automatically injects historical timestamps into all API calls, letting you replay market data and simulate trades without placing real orders.
+
+```python
+# Production code
+from dome_api_sdk import DomeClient
+dome = DomeClient({"api_key": "..."})
+
+# Backtest code (same interface!)
+from backtest_service import DomeBacktestClient
+dome = DomeBacktestClient(api_key, clock, portfolio)
+```
+
+## Features
+
+- **Historical Data On-Demand** — Uses Dome API's `at_time` parameter, no local data storage needed
+- **Market Discovery** — `get_markets()` filters results to prevent lookahead bias
+- **Multi-Platform** — Supports both Polymarket and Kalshi
+- **Portfolio Simulation** — Track positions, cash, and P&L without real trades
+- **Drop-in Replacement** — Same API interface as the real Dome SDK
+
+## Installation
 
 ```bash
 pip install dome-api-sdk
+git clone https://github.com/tweidv/backtest-service.git
+cd backtest-service
+pip install -e .
 ```
 
 ## Quick Start
@@ -15,109 +38,99 @@ pip install dome-api-sdk
 ```python
 import asyncio
 from decimal import Decimal
-from backtest_service import DomeBacktestClient, BacktestRunner
+from backtest_service import BacktestRunner
 
-# 1. Define your strategy (same code as production!)
-async def my_strategy(dome: DomeBacktestClient, portfolio):
-    token_id = "your-token-id"
-    
-    # Get historical price at current simulation time
-    price_data = await dome.polymarket.get_market_price({"token_id": token_id})
+TOKEN_ID = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+
+async def my_strategy(dome, portfolio):
+    """Your strategy - same code works in production!"""
+    price_data = await dome.polymarket.get_market_price({"token_id": TOKEN_ID})
     price = Decimal(str(price_data.price))
     
-    # Buy if cheap
     if price < Decimal("0.5") and portfolio.cash > 100:
-        dome.polymarket.buy(token_id, quantity=Decimal(10), price=price)
-    
-    # Sell if expensive
-    elif price > Decimal("0.7") and token_id in portfolio.positions:
-        dome.polymarket.sell(token_id, quantity=portfolio.positions[token_id], price=price)
+        dome.polymarket.buy(TOKEN_ID, Decimal(100), price)
 
-
-# 2. Define how to get prices for portfolio valuation
 async def get_prices(dome):
-    token_id = "your-token-id"
-    price_data = await dome.polymarket.get_market_price({"token_id": token_id})
-    return {token_id: Decimal(str(price_data.price))}
+    """Get current prices for portfolio valuation."""
+    data = await dome.polymarket.get_market_price({"token_id": TOKEN_ID})
+    return {TOKEN_ID: Decimal(str(data.price))}
 
-
-# 3. Run backtest
 async def main():
     runner = BacktestRunner(
-        api_key="YOUR_DOME_API_KEY",  # or use os.environ["DOME_API_KEY"]
-        start_time=1704067200,        # Jan 1, 2024 (unix timestamp)
-        end_time=1704672000,          # Jan 8, 2024
-        step=3600,                    # 1 hour intervals
-        initial_cash=Decimal(10000),
+        api_key="YOUR_DOME_API_KEY",
+        start_time=1729800000,  # Oct 24, 2024
+        end_time=1729886400,    # Oct 25, 2024
+        step=3600,              # 1 hour intervals
+        initial_cash=Decimal("10000"),
     )
     
     result = await runner.run(my_strategy, get_prices)
     
-    print(f"Initial: ${result.initial_cash}")
-    print(f"Final:   ${result.final_value}")
-    print(f"Return:  {result.total_return_pct:.2f}%")
-    print(f"Trades:  {len(result.trades)}")
+    print(f"Return: {result.total_return_pct:+.2f}%")
+    print(f"Trades: {len(result.trades)}")
 
 asyncio.run(main())
 ```
 
-## API Reference
+## Market Discovery
 
-### DomeBacktestClient
-
-Drop-in replacement for `DomeClient`. Supports both platforms:
+Discover markets dynamically during backtests **without lookahead bias**:
 
 ```python
-# Polymarket
-await dome.polymarket.get_market_price({"token_id": "..."})
-await dome.polymarket.get_market({"token_id": "..."})
-await dome.polymarket.get_markets({"status": "open", "limit": 10})  # Market discovery!
-await dome.polymarket.get_orderbook_history({"token_id": "..."})
-await dome.polymarket.get_trade_history({"token_id": "..."})
-dome.polymarket.buy(token_id, quantity, price)
-dome.polymarket.sell(token_id, quantity, price)
-
-# Kalshi
-await dome.kalshi.get_markets({"status": "open", "limit": 10})
-dome.kalshi.buy(ticker, quantity, price)
-dome.kalshi.sell(ticker, quantity, price)
-```
-
-### Market Discovery (Historical)
-
-The `get_markets()` method filters results to prevent **lookahead bias**:
-
-```python
-# At backtest time Oct 15, 2024 (before election):
-response = await dome.polymarket.get_markets({"status": "open", "min_volume": 1000000})
+# At backtest time Oct 20, 2024 (before the election):
+response = await dome.polymarket.get_markets({
+    "status": "open",
+    "min_volume": 100000,
+    "limit": 10,
+})
 
 for market in response.markets:
-    print(market.title)
-    print(market.historical_status)  # "open" or "closed" at backtest time
-    print(market.was_resolved)       # False - election hadn't happened yet
-    print(market.winning_side)       # None - outcome hidden!
+    print(market.title)              # "Will Trump win the 2024 election?"
+    print(market.historical_status)  # "open" — was open at backtest time
+    print(market.was_resolved)       # False — election hadn't happened yet
+    print(market.winning_side)       # None — outcome is hidden!
+    print(market.side_a.id)          # Token ID for trading
 ```
 
 **Key behaviors:**
 - Markets with `start_time > backtest_time` are excluded (didn't exist yet)
-- `historical_status` reflects status AT backtest time, not current status
-- `winning_side` is `None` if market wasn't resolved at backtest time
-- `was_resolved` tells you if outcome was known at backtest time
+- `historical_status` reflects the status **at backtest time**, not current
+- `winning_side` is `None` if the market wasn't resolved at backtest time
+- Works for both Polymarket and Kalshi
 
-This lets you build strategies that discover markets dynamically without knowing the future!
+## API Reference
 
 ### BacktestRunner
 
 ```python
 runner = BacktestRunner(
-    api_key="...",
-    start_time=1704067200,  # Unix timestamp
-    end_time=1704672000,
-    step=3600,              # Seconds between ticks (default: 1 hour)
-    initial_cash=10000,
+    api_key="...",           # Dome API key
+    start_time=1729800000,   # Unix timestamp
+    end_time=1729886400,     # Unix timestamp
+    step=3600,               # Seconds between ticks (default: 1 hour)
+    initial_cash=10000,      # Starting cash
 )
 
 result = await runner.run(strategy_fn, get_prices_fn)
+```
+
+### DomeBacktestClient
+
+```python
+# Polymarket
+await dome.polymarket.get_markets(params)         # Market discovery
+await dome.polymarket.get_market_price(params)    # Historical prices
+await dome.polymarket.get_market(params)          # Market details
+await dome.polymarket.get_orderbook_history(params)
+await dome.polymarket.get_trade_history(params)
+dome.polymarket.buy(token_id, quantity, price)    # Simulated
+dome.polymarket.sell(token_id, quantity, price)   # Simulated
+
+# Kalshi
+await dome.kalshi.get_markets(params)             # Market discovery
+await dome.kalshi.get_orderbooks(params)
+dome.kalshi.buy(ticker, quantity, price)          # Simulated
+dome.kalshi.sell(ticker, quantity, price)         # Simulated
 ```
 
 ### BacktestResult
@@ -133,18 +146,29 @@ result.equity_curve      # List[(timestamp, value)]
 
 ### Portfolio
 
-Available in your strategy function:
-
 ```python
-portfolio.cash                    # Decimal - available cash
-portfolio.positions               # Dict[token_id, Decimal] - quantities held
-portfolio.trades                  # List[Trade] - executed trades
-portfolio.get_value(prices)       # Total value given current prices
+portfolio.cash              # Available cash
+portfolio.positions         # Dict[token_id, quantity]
+portfolio.trades            # List of executed trades
+portfolio.get_value(prices) # Total portfolio value
 ```
 
-## Environment Variable
+### HistoricalMarket
 
-Set your API key as an environment variable:
+```python
+market.market_slug        # Market identifier
+market.title              # Market question
+market.start_time         # When trading started
+market.end_time           # Scheduled resolution
+market.close_time         # When trading closed
+market.side_a             # First outcome (id, label)
+market.side_b             # Second outcome (id, label)
+market.historical_status  # "open" or "closed" at backtest time
+market.was_resolved       # Whether outcome was known at backtest time
+market.winning_side       # Winner (only if was_resolved=True)
+```
+
+## Environment Variables
 
 ```bash
 # Windows
@@ -154,26 +178,16 @@ set DOME_API_KEY=your-api-key
 export DOME_API_KEY=your-api-key
 ```
 
-Then in code:
+## Rate Limiting
 
-```python
-import os
-runner = BacktestRunner(api_key=os.environ["DOME_API_KEY"], ...)
-```
+The service includes built-in rate limiting (1.1s between API calls) to comply with Dome API's free tier limits.
 
-## How It Works
+## Alternatives
 
-1. `BacktestRunner` creates a `SimulationClock` starting at `start_time`
-2. Each tick: clock advances by `step` seconds, your strategy runs
-3. All Dome API calls automatically get `at_time=clock.current_time` injected
-4. `buy()`/`sell()` calls update the `Portfolio` (no real orders placed)
-5. At end, returns `BacktestResult` with P&L and trade history
+For bulk historical data or faster backtests:
+- [DeltaBase](https://deltabase.tech) — CSV downloads
+- [Predexon](https://docs.predexon.com) — OHLCV + order flow API
 
-## Data Sources
+## License
 
-This service uses **Dome API** for historical data (on-demand, no storage needed).
-
-Alternatives for bulk/faster data:
-- [DeltaBase](https://deltabase.tech) - CSV downloads
-- [Predexon](https://docs.predexon.com) - OHLCV + order flow API
-
+MIT
