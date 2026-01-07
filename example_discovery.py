@@ -13,18 +13,13 @@ import os
 from datetime import datetime
 from decimal import Decimal
 
-from backtest_service import BacktestRunner
+from backtest_service import DomeBacktestClient
+from datetime import datetime
 
 
-async def discovery_strategy(dome, portfolio):
+async def discovery_strategy(dome):
     """Discover and analyze markets dynamically."""
-    current_time = dome._clock.current_time
-    
-    # Only discover every 6 hours
-    if (current_time - 1729800000) % (6 * 3600) != 0:
-        return
-    
-    print(f"\n[{datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M')}]")
+    print(f"\n[Discovering markets...]")
     
     try:
         # Discover open, liquid markets
@@ -57,10 +52,6 @@ async def discovery_strategy(dome, portfolio):
         print(f"Error: {e}")
 
 
-async def get_prices(dome):
-    return {}
-
-
 async def main():
     api_key = os.environ.get("DOME_API_KEY")
     if not api_key:
@@ -74,15 +65,15 @@ async def main():
     print("Notice: Outcomes are HIDDEN - no lookahead bias!")
     print("=" * 60)
     
-    runner = BacktestRunner(
-        api_key=api_key,
-        start_time=1729800000,  # Oct 24, 2024
-        end_time=1729886400,    # Oct 25, 2024
-        step=3600 * 6,          # 6 hour intervals
-        initial_cash=Decimal("10000"),
-    )
+    dome = DomeBacktestClient({
+        "api_key": api_key,
+        "start_time": 1729800000,  # Oct 24, 2024
+        "end_time": 1729886400,    # Oct 25, 2024
+        "step": 3600 * 6,          # 6 hour intervals
+        "initial_cash": 10000,
+    })
     
-    await runner.run(discovery_strategy, get_prices)
+    await dome.run(discovery_strategy)
     
     print("=" * 60)
     print("Notice: All markets showed 'Resolved: False'")

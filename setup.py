@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="backtest_service",
-    version="0.2.0",
+    version="0.3.0",
     description="Minimal backtesting for Polymarket/Kalshi prediction markets via Dome API",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
