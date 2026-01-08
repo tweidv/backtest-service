@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brier Labs - Backtest Prediction Market Strategies</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'brier-green': '#10b981',
+                        'brier-dark': '#0f172a',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- CodeMirror for syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/base16-light.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .neobrutalist {
+            border: 4px solid #000;
+            box-shadow: 8px 8px 0px #000;
+        }
+        
+        .neobrutalist-sm {
+            border: 3px solid #000;
+            box-shadow: 4px 4px 0px #000;
+        }
+        
+        .neobrutalist-green {
+            border: 4px solid #000;
+            box-shadow: 8px 8px 0px #10b981;
+        }
+        
+        .hover-lift:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 10px 10px 0px #000;
+        }
+        
+        .hover-lift-green:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 10px 10px 0px #10b981;
+        }
+        
+        textarea:focus, input:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+        
+        /* CodeMirror styling */
+        .CodeMirror {
+            background: #f5f5f5 !important;
+            border: none !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 14px;
+            height: 384px;
+            padding: 0 !important;
+        }
+        
+        .CodeMirror-scroll {
+            background: #f5f5f5;
+        }
+        
+        .CodeMirror-lines {
+            padding: 0 !important;
+        }
+        
+        .CodeMirror-gutters {
+            background: #e5e5e5 !important;
+            border-right: 2px solid #000 !important;
+        }
+        
+        .CodeMirror-linenumber {
+            color: #666 !important;
+            font-weight: 600;
+        }
+        
+        .CodeMirror-cursor {
+            border-left: 2px solid #10b981 !important;
+        }
+        
+        .CodeMirror-selected {
+            background: #d1fae5 !important;
+        }
+        
+        /* Python syntax highlighting colors for light theme */
+        .cm-keyword { color: #0066cc !important; font-weight: 600; }
+        .cm-def { color: #0066cc !important; }
+        .cm-variable { color: #1e293b !important; }
+        .cm-variable-2 { color: #1e293b !important; }
+        .cm-string { color: #d97706 !important; }
+        .cm-number { color: #7c3aed !important; }
+        .cm-comment { color: #64748b !important; font-style: italic; }
+        .cm-operator { color: #0066cc !important; }
+        .cm-builtin { color: #059669 !important; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="border-b-4 border-black bg-white">
+        <div class="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-brier-green border-4 border-black flex items-center justify-center">
+                    <span class="text-2xl font-black text-white">B</span>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black text-brier-dark tracking-tight">BRIER LABS</h1>
+                    <p class="text-xs font-semibold text-gray-600 tracking-wide uppercase">Quantitative Research</p>
+                </div>
+            </div>
+            <nav class="flex gap-6 items-center">
+                <a href="#" class="text-sm font-bold text-gray-700 hover:text-brier-green transition-colors">Docs</a>
+                <a href="#" class="text-sm font-bold text-gray-700 hover:text-brier-green transition-colors">SDK</a>
+                <a href="#" class="text-sm font-bold text-gray-700 hover:text-brier-green transition-colors">Pricing</a>
+                <button class="px-6 py-2 bg-brier-green border-3 border-black font-bold text-white neobrutalist-sm hover-lift-green transition-transform">
+                    Sign In
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="max-w-7xl mx-auto px-6 py-16">
+        <div class="text-center mb-8">
+            <h2 class="text-6xl font-black text-brier-dark mb-6 tracking-tight">
+                Backtest Prediction<br/>Market Strategies
+            </h2>
+            <!-- API Support -->
+            <div class="flex items-center justify-center gap-6 text-sm font-bold text-gray-600">
+                <span class="uppercase tracking-wide">API Support:</span>
+                <a href="https://domeapi.io" target="_blank" class="flex items-center gap-2 hover:text-brier-green transition-colors">
+                    <img src="/static/logos/dome-logo.svg" alt="Dome" class="h-6 w-auto" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <img src="/static/logos/dome-logo.png" alt="Dome" class="h-6 w-auto" style="display:none;" onerror="this.style.display='none';">
+                    <span>Dome</span>
+                </a>
+                <a href="https://polymarket.com" target="_blank" class="flex items-center gap-2 hover:text-brier-green transition-colors">
+                    <img src="/static/logos/polymarket-logo.svg" alt="Polymarket" class="h-6 w-auto" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <img src="/static/logos/polymarket-logo.png" alt="Polymarket" class="h-6 w-auto" style="display:none;" onerror="this.style.display='none';">
+                    <span>Polymarket</span>
+                </a>
+                <a href="https://kalshi.com" target="_blank" class="flex items-center gap-2 hover:text-brier-green transition-colors">
+                    <img src="/static/logos/kalshi-logo.svg" alt="Kalshi" class="h-6 w-auto" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <img src="/static/logos/kalshi-logo.png" alt="Kalshi" class="h-6 w-auto" style="display:none;" onerror="this.style.display='none';">
+                    <span>Kalshi</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Main Backtest Interface -->
+        <div class="max-w-5xl mx-auto">
+
+            <!-- Code Input -->
+            <div class="bg-white neobrutalist mb-6">
+                <div class="border-b-4 border-black bg-gray-900 px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full bg-red-500 border-2 border-black"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-400 border-2 border-black"></div>
+                        <div class="w-3 h-3 rounded-full bg-brier-green border-2 border-black"></div>
+                    </div>
+                    <span class="text-sm font-bold text-gray-400 mono">your_strategy.py</span>
+                    <div class="text-sm font-bold text-gray-500 uppercase tracking-wider">Code Mode</div>
+                </div>
+                <div class="bg-gray-100">
+                    <textarea 
+                        id="code-input"
+                        class="hidden"
+                    ># Paste your strategy code here
+
+async def my_strategy(dome):
+    price = await dome.polymarket.get_market_price({
+        'token_id': '21742633143463906290569050155826241533067272736897614950488156847949938836455'
+    })
+    
+    if price.price < 0.5 and dome.portfolio.cash > 100:
+        dome.polymarket.buy(...)
+        
+# Or describe in natural language (coming soon):
+# 'Buy BTC $100k when price drops below 0.5, sell above 0.7'</textarea>
+                    <div id="code-editor" class="border-3 border-black"></div>
+                </div>
+            </div>
+
+            <!-- Configuration -->
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bg-white neobrutalist-sm p-4">
+                    <label class="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2">Start Date</label>
+                    <input type="date" class="w-full border-3 border-black px-3 py-2 font-semibold" value="2024-10-24"/>
+                </div>
+                <div class="bg-white neobrutalist-sm p-4">
+                    <label class="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2">End Date</label>
+                    <input type="date" class="w-full border-3 border-black px-3 py-2 font-semibold" value="2024-10-25"/>
+                </div>
+                <div class="bg-white neobrutalist-sm p-4">
+                    <label class="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2">Initial Capital</label>
+                    <input type="text" class="w-full border-3 border-black px-3 py-2 font-semibold" value="$10,000"/>
+                </div>
+            </div>
+
+            <!-- Run Button -->
+            <button 
+                id="run-backtest"
+                class="w-full bg-brier-green border-4 border-black py-6 font-black text-xl text-white uppercase tracking-wider neobrutalist hover-lift transition-transform"
+            >
+                Run Backtest →
+            </button>
+
+            <!-- Results Placeholder -->
+            <div id="results" class="hidden mt-8 bg-white neobrutalist p-8">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-2xl font-black text-brier-dark">Results</h3>
+                    <div class="px-4 py-1 bg-brier-green border-3 border-black">
+                        <span class="text-sm font-black text-white">SUCCESS</span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-4 gap-4">
+                    <div class="border-3 border-black p-4 bg-gray-50">
+                        <div class="text-sm font-bold text-gray-600 uppercase mb-1">Return</div>
+                        <div class="text-3xl font-black text-brier-green">+12.4%</div>
+                    </div>
+                    <div class="border-3 border-black p-4 bg-gray-50">
+                        <div class="text-sm font-bold text-gray-600 uppercase mb-1">Final Value</div>
+                        <div class="text-3xl font-black text-brier-dark">$11,240</div>
+                    </div>
+                    <div class="border-3 border-black p-4 bg-gray-50">
+                        <div class="text-sm font-bold text-gray-600 uppercase mb-1">Trades</div>
+                        <div class="text-3xl font-black text-brier-dark">14</div>
+                    </div>
+                    <div class="border-3 border-black p-4 bg-gray-50">
+                        <div class="text-sm font-bold text-gray-600 uppercase mb-1">Duration</div>
+                        <div class="text-3xl font-black text-brier-dark">2.1s</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-white py-12 border-t-4 border-black">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-brier-green border-3 border-black flex items-center justify-center">
+                        <span class="text-xl font-black text-white">B</span>
+                    </div>
+                    <div>
+                        <div class="text-lg font-black">BRIER LABS</div>
+                        <div class="text-xs font-semibold text-gray-400">Quantitative Research</div>
+                    </div>
+                </div>
+                <div class="flex gap-8">
+                    <a href="#" class="text-sm font-bold hover:text-brier-green transition-colors">Documentation</a>
+                    <a href="#" class="text-sm font-bold hover:text-brier-green transition-colors">GitHub</a>
+                    <a href="#" class="text-sm font-bold hover:text-brier-green transition-colors">Discord</a>
+                    <a href="#" class="text-sm font-bold hover:text-brier-green transition-colors">Contact</a>
+                </div>
+            </div>
+            <div class="mt-8 pt-8 border-t-2 border-gray-700 text-center">
+                <p class="text-sm font-semibold text-gray-400">© 2026 Brier Labs</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Initialize CodeMirror editor
+        const codeTextarea = document.getElementById('code-input');
+        const editor = CodeMirror(document.getElementById('code-editor'), {
+            value: codeTextarea.value,
+            mode: 'python',
+            theme: 'base16-light',
+            lineNumbers: true,
+            lineWrapping: true,
+            indentUnit: 4,
+            indentWithTabs: false,
+            autofocus: true,
+            styleActiveLine: true,
+            matchBrackets: true,
+            extraKeys: {
+                "Tab": function(cm) {
+                    if (cm.somethingSelected()) {
+                        cm.indentSelection("add");
+                    } else {
+                        cm.replaceSelection("    ", "end");
+                    }
+                }
+            }
+        });
+
+        // Sync CodeMirror with textarea
+        editor.on('change', function(cm) {
+            codeTextarea.value = cm.getValue();
+        });
+
+        // Set editor height
+        editor.setSize(null, '384px'); // 96 * 4 = 384px (h-96)
+
+        // Simple demo interaction
+        document.getElementById('run-backtest').addEventListener('click', function() {
+            const button = this;
+            button.textContent = 'Running... ⚡';
+            button.disabled = true;
+            
+            setTimeout(() => {
+                button.textContent = 'Run Backtest →';
+                button.disabled = false;
+                document.getElementById('results').classList.remove('hidden');
+                document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+            }, 2000);
+        });
+    </script>
+</body>
+</html>
+
