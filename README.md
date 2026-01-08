@@ -10,6 +10,8 @@ Swap your `DomeClient` import with `DomeBacktestClient` — it automatically inj
 
 **Minimal effort conversion:** Just swap the import, add dates to the config, and call `run()`!
 
+> 📖 **Full migration guide:** See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for detailed examples
+
 ```python
 # Production code
 from dome_api_sdk import DomeClient

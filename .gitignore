@@ -32,3 +32,6 @@ Thumbs.db
 
 # Tests (local only)
 tests/
+
+# Build artifacts
+*.egg-info/
