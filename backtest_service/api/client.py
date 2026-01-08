@@ -53,6 +53,12 @@ class DomeBacktestClient:
             self.enable_interest = config.get("enable_interest", False)  # Kalshi only
             self.interest_apy = Decimal(str(config.get("interest_apy", "0.04")))  # 4% APY default
             
+            # UX/Logging configuration
+            self.verbose = config.get("verbose", False)
+            self.log_level = config.get("log_level", "INFO")  # DEBUG, INFO, WARNING, ERROR
+            self.on_tick = config.get("on_tick", None)  # Callback: async fn(dome, portfolio)
+            self.on_api_call = config.get("on_api_call", None)  # Callback: async fn(endpoint, params, response)
+            
             # Create internal components
             self._clock = SimulationClock(self.start_time)
             self._portfolio = Portfolio(
@@ -72,6 +78,11 @@ class DomeBacktestClient:
             self.end_time = None  # Will be set by run() or BacktestRunner
             self.step = 3600
             self.initial_cash = portfolio.cash
+            # Default UX settings for old style
+            self.verbose = False
+            self.log_level = "INFO"
+            self.on_tick = None
+            self.on_api_call = None
         
         self._real_client = DomeClient({"api_key": self.api_key})
         
@@ -83,6 +94,50 @@ class DomeBacktestClient:
         self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio)
         self.matching_markets = MatchingMarketsNamespace(self._real_client, self._clock, self._portfolio)
         self.crypto_prices = CryptoPricesNamespace(self._real_client, self._clock, self._portfolio)
+        
+        # Set verbose/logging on all namespace APIs (they inherit from BasePlatformAPI)
+        # Note: This will be called again in run() after reset, but setting here for immediate use
+        if isinstance(config_or_api_key, dict):
+            self._set_verbose_on_namespaces()
+    
+    def _set_verbose_on_namespaces(self):
+        """Set verbose/logging settings on all API namespaces."""
+        # Polymarket
+        for attr in ['markets', 'orders', 'wallet', 'activity']:
+            if hasattr(self.polymarket, attr):
+                api_obj = getattr(self.polymarket, attr)
+                if hasattr(api_obj, '_verbose'):
+                    api_obj._verbose = self.verbose
+                    api_obj._log_level = self.log_level
+                    api_obj._on_api_call = self.on_api_call
+                    api_obj._dome_client = self
+        
+        # Kalshi
+        for attr in ['markets', 'orderbooks', 'trades']:
+            if hasattr(self.kalshi, attr):
+                api_obj = getattr(self.kalshi, attr)
+                if hasattr(api_obj, '_verbose'):
+                    api_obj._verbose = self.verbose
+                    api_obj._log_level = self.log_level
+                    api_obj._on_api_call = self.on_api_call
+                    api_obj._dome_client = self
+        
+        # Matching markets
+        if hasattr(self.matching_markets, '_verbose'):
+            self.matching_markets._verbose = self.verbose
+            self.matching_markets._log_level = self.log_level
+            self.matching_markets._on_api_call = self.on_api_call
+            self.matching_markets._dome_client = self
+        
+        # Crypto prices
+        for attr in ['binance', 'chainlink']:
+            if hasattr(self.crypto_prices, attr):
+                api_obj = getattr(self.crypto_prices, attr)
+                if hasattr(api_obj, '_verbose'):
+                    api_obj._verbose = self.verbose
+                    api_obj._log_level = self.log_level
+                    api_obj._on_api_call = self.on_api_call
+                    api_obj._dome_client = self
     
     async def run(self, strategy: Callable, get_prices: Optional[Callable] = None, end_time: Optional[int] = None):
         """
@@ -130,6 +185,9 @@ class DomeBacktestClient:
         self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio)
         self.matching_markets = MatchingMarketsNamespace(self._real_client, self._clock, self._portfolio)
         self.crypto_prices = CryptoPricesNamespace(self._real_client, self._clock, self._portfolio)
+        
+        # Re-apply verbose settings after reset
+        self._set_verbose_on_namespaces()
         
         # Auto-detect get_prices if not provided
         if get_prices is None:
@@ -221,7 +279,28 @@ class DomeBacktestClient:
         sig = inspect.signature(strategy)
         param_count = len(sig.parameters)
         
+        # Calculate total ticks for progress
+        total_ticks = ((effective_end_time - self.start_time) // self.step) + 1
+        current_tick = 0
+        
+        from datetime import datetime
+        
         while self._clock.current_time <= effective_end_time:
+            current_tick += 1
+            current_time_str = datetime.fromtimestamp(self._clock.current_time).strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Show progress if verbose
+            if self.verbose:
+                prices = await get_prices(self)
+                current_value = self._portfolio.get_value(prices)
+                print(f"\n[Tick {current_tick}/{total_ticks}] {current_time_str} | "
+                      f"Cash: ${self._portfolio.cash:,.2f} | Value: ${current_value:,.2f} | "
+                      f"Positions: {len(self._portfolio.positions)}")
+            
+            # Call on_tick callback if provided
+            if self.on_tick:
+                await self.on_tick(self, self._portfolio)
+            
             # Run strategy with appropriate signature
             if param_count == 1:
                 await strategy(self)

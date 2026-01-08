@@ -35,6 +35,12 @@ class BasePlatformAPI:
         self._portfolio = portfolio
         self._rate_limit = rate_limit  # seconds between API calls
         
+        # UX/Logging (set by DomeBacktestClient)
+        self._verbose = False
+        self._log_level = "INFO"
+        self._on_api_call = None
+        self._dome_client = None
+        
         # Initialize order simulation components (lazy initialization)
         self._orderbook_sim = None
         self._order_manager = None
@@ -57,6 +63,29 @@ class BasePlatformAPI:
         Handles rate limit errors (429) with exponential backoff retry.
         """
         import time
+        from datetime import datetime
+        
+        # Extract endpoint name for logging
+        endpoint_name = getattr(method, '__name__', 'unknown')
+        if hasattr(method, '__self__'):
+            # Try to get the full path
+            class_name = method.__self__.__class__.__name__ if hasattr(method.__self__, '__class__') else 'unknown'
+            endpoint_name = f"{class_name}.{endpoint_name}"
+        
+        # Log API call if verbose
+        if self._verbose and self._log_level in ["DEBUG", "INFO"]:
+            # Create a readable params summary
+            params_summary = {}
+            for key, value in params.items():
+                if key == 'token_id' or key == 'condition_id':
+                    params_summary[key] = f"{str(value)[:20]}..." if len(str(value)) > 20 else value
+                elif isinstance(value, (int, float, str)):
+                    params_summary[key] = value
+                else:
+                    params_summary[key] = type(value).__name__
+            
+            current_time_str = datetime.fromtimestamp(self._clock.current_time).strftime('%H:%M:%S')
+            print(f"  [API] {current_time_str} {self.platform}.{endpoint_name}({params_summary})")
         
         for attempt in range(max_retries):
             # Rate limiting delay
@@ -67,6 +96,22 @@ class BasePlatformAPI:
                 # If the SDK returns a coroutine, await it
                 if inspect.iscoroutine(result):
                     result = await result
+                
+                # Log response if verbose
+                if self._verbose and self._log_level == "DEBUG":
+                    result_summary = "OK"
+                    if hasattr(result, 'markets'):
+                        result_summary = f"{len(result.markets)} markets"
+                    elif hasattr(result, 'price'):
+                        result_summary = f"price={result.price}"
+                    elif hasattr(result, 'snapshots'):
+                        result_summary = f"{len(result.snapshots)} snapshots"
+                    print(f"    -> {result_summary}")
+                
+                # Call on_api_call callback if provided
+                if self._on_api_call:
+                    await self._on_api_call(endpoint_name, params, result)
+                
                 return result
             except ValueError as e:
                 # Check if it's a rate limit error
@@ -74,7 +119,7 @@ class BasePlatformAPI:
                 if "429" in error_str or "Rate Limit" in error_str or "rate limit" in error_str.lower():
                     if attempt < max_retries - 1:
                         # Extract retry_after from error if available
-                        retry_after = 10  # Default 10 seconds
+                        retry_after = 1  # Default 1 second
                         if "retry_after" in error_str:
                             try:
                                 import json
@@ -83,7 +128,7 @@ class BasePlatformAPI:
                                 json_match = re.search(r'\{[^}]+\}', error_str)
                                 if json_match:
                                     error_data = json.loads(json_match.group())
-                                    retry_after = error_data.get("retry_after", 10)
+                                    retry_after = error_data.get("retry_after", 1)
                             except:
                                 pass
                         

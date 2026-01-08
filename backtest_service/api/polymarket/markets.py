@@ -25,6 +25,7 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         super().__init__("polymarket", real_client, clock, portfolio, rate_limit)
         self._real_api = real_client.polymarket
         self._real_client = real_client  # Store for orderbook access
+        # Note: _verbose, _log_level, _on_api_call are set by DomeBacktestClient
 
     async def get_markets(self, params: dict = None) -> HistoricalMarketsResponse:
         """
