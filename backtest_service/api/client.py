@@ -225,10 +225,10 @@ class PlatformAPI:
         
         if 'end_time' not in api_params:
             # Set end_time far enough in the future to catch long-running markets
-            # Use 2 years to ensure we get markets that started before backtest_time
-            # but end much later (markets can be up to 1 year long)
+            # Use 1 year to ensure we get markets that started before backtest_time
+            # but end later (markets can be up to 1 year long)
             # We'll filter precisely client-side anyway
-            api_params['end_time'] = at_time + (730 * 24 * 3600)  # 2 years after backtest
+            api_params['end_time'] = at_time + (365 * 24 * 3600)  # 1 year after backtest
         
         # Handle pagination to get ALL markets in the time window
         all_markets = []
@@ -382,7 +382,7 @@ class KalshiAPI:
             api_params['start_time'] = at_time - (365 * 24 * 3600)  # 1 year before
         
         if 'end_time' not in api_params:
-            api_params['end_time'] = at_time + (730 * 24 * 3600)  # 2 years after
+            api_params['end_time'] = at_time + (365 * 24 * 3600)  # 1 year after
         
         # Handle pagination to get ALL markets in the time window
         all_markets = []
