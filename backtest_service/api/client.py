@@ -149,6 +149,14 @@ class DomeBacktestClient:
             else:
                 await strategy(self, self._portfolio)
             
+            # Process pending limit orders (GTC/GTD)
+            if hasattr(self.polymarket.markets, '_order_manager'):
+                if self.polymarket.markets._order_manager:
+                    await self.polymarket.markets._order_manager.process_pending_orders("polymarket")
+            if hasattr(self.kalshi.markets, '_order_manager'):
+                if self.kalshi.markets._order_manager:
+                    await self.kalshi.markets._order_manager.process_pending_orders("kalshi")
+            
             # Record equity
             prices = await get_prices(self)
             value = self._portfolio.get_value(prices)

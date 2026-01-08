@@ -259,12 +259,110 @@ All API methods have been tested and verified to work with the same syntax:
 
 ---
 
+## Native SDK Support
+
+### Polymarket Native SDK (`py-clob-client`)
+
+**Drop-in replacement** for `py-clob-client`:
+
+**Live:**
+```python
+from py_clob_client import ClobClient
+
+client = ClobClient(api_key="...")
+order = await client.create_order(
+    token_id="0x123...",
+    side="YES",
+    size="1000000000",
+    price="0.65",
+    order_type="GTC"
+)
+```
+
+**Backtest:**
+```python
+from backtest_service.native import PolymarketBacktestClient
+
+client = PolymarketBacktestClient({
+    "dome_api_key": "...",
+    "start_time": 1729800000,
+    "end_time": 1729886400,
+    "initial_cash": 10000,
+})
+
+# Same code! ✅
+order = await client.create_order(
+    token_id="0x123...",
+    side="YES",
+    size="1000000000",
+    price="0.65",
+    order_type="GTC"
+)
+```
+
+### Kalshi Native SDK (`kalshi`)
+
+**Drop-in replacement** for `kalshi` SDK:
+
+**Live:**
+```python
+from kalshi import KalshiClient
+
+client = KalshiClient(api_key="...")
+order = await client.create_order(
+    ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
+    side="yes",
+    action="buy",
+    count=100,
+    order_type="limit",
+    yes_price=75
+)
+```
+
+**Backtest:**
+```python
+from backtest_service.native import KalshiBacktestClient
+
+client = KalshiBacktestClient({
+    "dome_api_key": "...",
+    "start_time": 1729800000,
+    "end_time": 1729886400,
+    "initial_cash": 10000,
+})
+
+# Same code! ✅
+order = await client.create_order(
+    ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
+    side="yes",
+    action="buy",
+    count=100,
+    order_type="limit",
+    yes_price=75
+)
+```
+
+## Order Types Supported
+
+All backtest clients support realistic order types:
+
+- **MARKET** - Fills immediately at best available price
+- **LIMIT** - Fills if price is marketable, otherwise queues
+- **FOK** (Fill-or-Kill) - Fills completely or rejects
+- **GTC** (Good-Till-Cancel) - Persists until filled or cancelled
+- **GTD** (Good-Till-Date) - Persists until expiration or filled
+
+Order matching uses historical orderbook data from Dome API to simulate realistic fills.
+
 ## Summary
 
 **Migration is trivial:**
-1. Change import: `DomeClient` → `DomeBacktestClient`
+1. Change import: `DomeClient` → `DomeBacktestClient` (or native SDK → backtest client)
 2. Add `start_time` and `end_time` to config
 3. Everything else stays **exactly the same**!
 
 Your live trading strategy code will work in backtesting without any modifications to the actual strategy logic! 🎉
+
+**Choose your approach:**
+- **Dome API** - Unified interface for both platforms
+- **Native SDKs** - Drop-in replacements matching real API signatures exactly
 

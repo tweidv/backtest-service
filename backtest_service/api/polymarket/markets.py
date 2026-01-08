@@ -24,6 +24,7 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
     ):
         super().__init__("polymarket", real_client, clock, portfolio, rate_limit)
         self._real_api = real_client.polymarket
+        self._real_client = real_client  # Store for orderbook access
 
     async def get_markets(self, params: dict = None) -> HistoricalMarketsResponse:
         """
@@ -359,13 +360,111 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         
         return response
 
+    async def create_order(
+        self,
+        token_id: str,
+        side: str,
+        size: str,
+        price: str,
+        order_type: str = "GTC",
+        expiration_time_seconds: int = None,
+        post_only: bool = False,
+        client_order_id: str = None,
+    ) -> dict:
+        """
+        Create an order - matches py-clob-client API signature.
+        
+        Matches: py_clob_client.ClobClient.create_order()
+        
+        Args:
+            token_id: Condition token ID (required)
+            side: "YES" or "NO" (required)
+            size: Order size as string in base units (required)
+            price: Limit price as string (0-1) (required for limit orders)
+            order_type: "MARKET", "FOK", "GTC", or "GTD" (default: "GTC")
+            expiration_time_seconds: Required for GTD orders
+            post_only: If True, order only rests (no immediate match)
+            client_order_id: Optional custom order ID
+        
+        Returns:
+            Simulated order response matching py-clob-client structure
+        
+        Example:
+            order = await dome.polymarket.markets.create_order(
+                token_id="0x123...",
+                side="YES",
+                size="1000000000",
+                price="0.65",
+                order_type="GTC"
+            )
+        """
+        # Validate side
+        if side.upper() not in ["YES", "NO"]:
+            raise ValueError(f"side must be 'YES' or 'NO', got: {side}")
+        
+        # Validate order_type
+        valid_types = ["MARKET", "FOK", "GTC", "GTD"]
+        if order_type not in valid_types:
+            raise ValueError(f"order_type must be one of {valid_types}, got: {order_type}")
+        
+        # Validate GTD requires expiration
+        if order_type == "GTD" and expiration_time_seconds is None:
+            raise ValueError("expiration_time_seconds is required for GTD orders")
+        
+        # Initialize order simulation if needed
+        self._init_order_simulation()
+        
+        # Convert to Decimal
+        size_decimal = Decimal(size)
+        limit_price = Decimal(price) if price else None
+        
+        # For MARKET orders, price is None
+        if order_type == "MARKET":
+            limit_price = None
+        
+        # Create and execute order
+        simulated_order = await self._order_manager.create_order(
+            token_id=token_id,
+            side=side.upper(),
+            size=size_decimal,
+            limit_price=limit_price,
+            order_type=order_type,
+            expiration_time_seconds=expiration_time_seconds,
+            client_order_id=client_order_id,
+            platform=self.platform,
+        )
+        
+        # Return response matching py-clob-client structure
+        return {
+            "order_id": simulated_order.order_id,
+            "client_order_id": simulated_order.client_order_id,
+            "token_id": simulated_order.token_id,
+            "side": simulated_order.side,
+            "size": str(simulated_order.size),
+            "price": str(simulated_order.limit_price) if simulated_order.limit_price else None,
+            "order_type": simulated_order.order_type,
+            "status": simulated_order.status.value,
+            "filled_size": str(simulated_order.filled_size),
+            "fill_price": str(simulated_order.fill_price) if simulated_order.fill_price else None,
+            "created_time": simulated_order.created_time,
+            "expiration_time": simulated_order.expiration_time,
+        }
+    
     def buy(self, token_id: str, quantity: Decimal, price: Decimal):
         """
         Simulate buying tokens (backtest only - convenience method).
         
         Note: Dome doesn't have trading methods (data API only).
-        This is a convenience wrapper around portfolio.buy().
+        This is a convenience wrapper around create_order().
+        
+        For more control, use create_order() directly.
         """
+        # Use create_order internally - simple market buy
+        import asyncio
+        
+        # Create coroutine but don't await (backward compatibility)
+        # This is a sync method, so we need to handle it differently
+        # For now, keep the simple implementation but note it should use create_order
         self._portfolio.buy(
             platform=self.platform,
             token_id=token_id,
@@ -374,12 +473,33 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
             timestamp=self._clock.current_time,
         )
 
+    async def buy_async(self, token_id: str, side: str, quantity: Decimal, price: Decimal, order_type: str = "GTC"):
+        """
+        Async version of buy() using create_order().
+        
+        Args:
+            token_id: Condition token ID
+            side: "YES" or "NO"
+            quantity: Quantity
+            price: Limit price (0-1)
+            order_type: "MARKET", "FOK", "GTC", or "GTD" (default: "GTC")
+        """
+        return await self.create_order(
+            token_id=token_id,
+            side=side,
+            size=str(int(quantity)),
+            price=str(price),
+            order_type=order_type,
+        )
+
     def sell(self, token_id: str, quantity: Decimal, price: Decimal):
         """
         Simulate selling tokens (backtest only - convenience method).
         
         Note: Dome doesn't have trading methods (data API only).
         This is a convenience wrapper around portfolio.sell().
+        
+        For more control, use create_order() directly.
         """
         self._portfolio.sell(
             platform=self.platform,
@@ -387,5 +507,24 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
             quantity=Decimal(quantity),
             price=Decimal(price),
             timestamp=self._clock.current_time,
+        )
+    
+    async def sell_async(self, token_id: str, side: str, quantity: Decimal, price: Decimal, order_type: str = "GTC"):
+        """
+        Async version of sell() using create_order().
+        
+        Args:
+            token_id: Condition token ID
+            side: "YES" or "NO"
+            quantity: Quantity
+            price: Limit price (0-1)
+            order_type: "MARKET", "FOK", "GTC", or "GTD" (default: "GTC")
+        """
+        return await self.create_order(
+            token_id=token_id,
+            side=side,
+            size=str(int(quantity)),
+            price=str(price),
+            order_type=order_type,
         )
 

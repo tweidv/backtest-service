@@ -30,9 +30,25 @@ class BasePlatformAPI:
     ):
         self.platform = platform
         self._client = real_client
+        self._real_api = None  # Will be set by subclasses
         self._clock = clock
         self._portfolio = portfolio
         self._rate_limit = rate_limit  # seconds between API calls
+        
+        # Initialize order simulation components (lazy initialization)
+        self._orderbook_sim = None
+        self._order_manager = None
+    
+    def _init_order_simulation(self):
+        """Lazy initialization of order simulation components."""
+        if self._orderbook_sim is None:
+            from ..simulation.orderbook import OrderbookSimulator
+            from ..simulation.orders import OrderManager
+            
+            self._orderbook_sim = OrderbookSimulator(self)
+            self._order_manager = OrderManager(self._clock, self._portfolio, self._orderbook_sim)
+            # Set real client reference
+            self._orderbook_sim._real_client = self._client
 
     async def _call_api(self, method, params: dict, max_retries: int = 3):
         """

@@ -2,7 +2,12 @@
 
 A minimal backtesting framework for **Polymarket** and **Kalshi** prediction markets using the [Dome API](https://domeapi.io).
 
-**Note:** Kalshi support is partially implemented. Market discovery and orderbooks work. Simulated trading (`buy()`/`sell()`) works for backtesting. These methods are included for forward compatibility - if Dome adds Kalshi trading support in the future, your backtest code will work seamlessly. Currently, for live Kalshi trading, you'd need to use Kalshi's API directly. Auto price detection for portfolio valuation is not yet available - you'll need to provide a `get_prices` function when using Kalshi positions. Polymarket is fully supported with auto price detection and matches the live API interface.
+Supports **three ways to trade**:
+1. **Dome API** (read-only) - Use `DomeBacktestClient` with simulated `buy()`/`sell()` methods
+2. **Polymarket Native SDK** - Use `PolymarketBacktestClient` as drop-in replacement for `py-clob-client`
+3. **Kalshi Native SDK** - Use `KalshiBacktestClient` as drop-in replacement for `kalshi` SDK
+
+All backtest clients support **realistic order types**: Market, Limit, FOK (Fill-or-Kill), GTC (Good-Till-Cancel), and GTD (Good-Till-Date) orders with proper orderbook matching.
 
 ## How It Works
 
@@ -42,9 +47,11 @@ print(f"Return: {result.total_return_pct:.2f}%")
 
 - **Historical Data On-Demand** — Uses Dome API's `at_time` parameter, no local data storage needed
 - **Market Discovery** — `get_markets()` filters results to prevent lookahead bias
-- **Multi-Platform** — Full support for Polymarket; Kalshi trading works but requires manual `get_prices` function for portfolio valuation (see note above)
+- **Multi-Platform** — Full support for Polymarket and Kalshi via Dome API
+- **Native SDK Support** — Drop-in replacements for `py-clob-client` and `kalshi` SDKs
+- **Realistic Order Types** — Market, Limit, FOK, GTC, GTD orders with orderbook matching
 - **Portfolio Simulation** — Track positions, cash, and P&L without real trades
-- **Drop-in Replacement** — Same API interface as the real Dome SDK
+- **Drop-in Replacement** — Same API interface as the real SDKs
 
 ## Installation
 
@@ -57,7 +64,7 @@ pip install -e .
 
 ## Quick Start
 
-**New simplified interface (recommended):**
+### Option 1: Dome API (Recommended for Multi-Platform)
 
 ```python
 import asyncio
@@ -69,30 +76,105 @@ TOKEN_ID = "21742633143463906290569050155826241533067272736897614950488156847949
 
 async def my_strategy(dome):
     """Your strategy - works in both production and backtest!"""
-    price_data = await dome.polymarket.get_market_price({"token_id": TOKEN_ID})
+    price_data = await dome.polymarket.markets.get_market_price({"token_id": TOKEN_ID})
     price = Decimal(str(price_data.price))
     
-    # Access portfolio via dome.portfolio
+    # Use create_order() for full control (matches native SDKs)
     if price < Decimal("0.5") and dome.portfolio.cash > 100:
-        dome.polymarket.buy(TOKEN_ID, Decimal(100), price)
+        await dome.polymarket.markets.create_order(
+            token_id=TOKEN_ID,
+            side="YES",
+            size="1000000000",
+            price="0.48",
+            order_type="GTC"  # Limit order
+        )
+    
+    # Or use convenience methods
+    # dome.polymarket.markets.buy(TOKEN_ID, Decimal(100), price)
 
 async def main():
-    # Just swap import and add dates - that's it!
     dome = DomeBacktestClient({
         "api_key": "YOUR_DOME_API_KEY",
         "start_time": int(datetime(2024, 10, 24).timestamp()),
         "end_time": int(datetime(2024, 10, 25).timestamp()),
-        "step": 3600,  # 1 hour intervals (optional)
-        "initial_cash": 10000,  # Starting capital (optional)
+        "step": 3600,
+        "initial_cash": 10000,
     })
     
-    # No get_prices function needed - auto-detects!
     result = await dome.run(my_strategy)
-    
     print(f"Return: {result.total_return_pct:+.2f}%")
     print(f"Trades: {len(result.trades)}")
 
 asyncio.run(main())
+```
+
+### Option 2: Polymarket Native SDK (Drop-in Replacement)
+
+```python
+import asyncio
+from datetime import datetime
+from backtest_service.native import PolymarketBacktestClient
+
+async def my_strategy():
+    # Backtest mode - just swap import!
+    client = PolymarketBacktestClient({
+        "dome_api_key": "YOUR_DOME_API_KEY",
+        "start_time": int(datetime(2024, 10, 24).timestamp()),
+        "end_time": int(datetime(2024, 10, 25).timestamp()),
+        "initial_cash": 10000,
+    })
+    
+    # Same code as live py-clob-client!
+    order = await client.create_order(
+        token_id="0x123...",
+        side="YES",
+        size="1000000000",
+        price="0.65",
+        order_type="GTC"
+    )
+    
+    print(f"Order Status: {order['status']}")
+    print(f"Filled: {order['filled_size']}")
+
+asyncio.run(my_strategy())
+
+# Live mode - just change config!
+# client = PolymarketBacktestClient({
+#     "mode": "live",
+#     "polymarket_api_key": "YOUR_POLYMARKET_API_KEY",
+# })
+```
+
+### Option 3: Kalshi Native SDK (Drop-in Replacement)
+
+```python
+import asyncio
+from datetime import datetime
+from backtest_service.native import KalshiBacktestClient
+
+async def my_strategy():
+    # Backtest mode
+    client = KalshiBacktestClient({
+        "dome_api_key": "YOUR_DOME_API_KEY",
+        "start_time": int(datetime(2024, 10, 24).timestamp()),
+        "end_time": int(datetime(2024, 10, 25).timestamp()),
+        "initial_cash": 10000,
+    })
+    
+    # Same code as live kalshi SDK!
+    order = await client.create_order(
+        ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
+        side="yes",
+        action="buy",
+        count=100,
+        order_type="limit",
+        yes_price=75  # cents
+    )
+    
+    print(f"Order Status: {order['status']}")
+    print(f"Filled: {order['filled_count']}")
+
+asyncio.run(my_strategy())
 ```
 
 
@@ -120,7 +202,7 @@ for market in response.markets:
 - Markets with `start_time > backtest_time` are excluded (didn't exist yet)
 - `historical_status` reflects the status **at backtest time**, not current
 - `winning_side` is `None` if the market wasn't resolved at backtest time
-- Works for Polymarket (fully supported) and Kalshi (market discovery and trading work, but auto price detection for portfolio valuation requires manual `get_prices` function)
+- Works for Polymarket and Kalshi with full order type support
 
 ## API Reference
 
@@ -144,19 +226,33 @@ dome.portfolio.cash        # Available cash
 dome.portfolio.positions  # Dict[token_id, quantity]
 
 # Polymarket API (fully supported)
-await dome.polymarket.get_markets(params)
-await dome.polymarket.get_market_price(params)
-dome.polymarket.buy(token_id, quantity, price)
-dome.polymarket.sell(token_id, quantity, price)
+await dome.polymarket.markets.get_markets(params)
+await dome.polymarket.markets.get_market_price(params)
+await dome.polymarket.markets.create_order(
+    token_id="0x123...",
+    side="YES",
+    size="1000000000",
+    price="0.65",
+    order_type="GTC"  # MARKET, FOK, GTC, or GTD
+)
+# Convenience methods (use create_order() for full control)
+dome.polymarket.markets.buy(token_id, quantity, price)
+dome.polymarket.markets.sell(token_id, quantity, price)
 
-# Kalshi API (data access works, simulated trading for backtesting)
-await dome.kalshi.get_markets(params)         # ✅ Works (matches live API)
-await dome.kalshi.get_orderbooks(params)     # ✅ Works (matches live API)
-dome.kalshi.buy(ticker, quantity, price)      # ✅ Backtest works (forward-compatible if Dome adds support)
-dome.kalshi.sell(ticker, quantity, price)     # ✅ Backtest works (forward-compatible if Dome adds support)
-# Note: Currently, for live Kalshi trading, use Kalshi's API directly (not through Dome)
-# Note: These methods are included for forward compatibility - if Dome adds Kalshi trading, your code will work
-# Note: For portfolio valuation, provide get_prices function when calling dome.run()
+# Kalshi API (fully supported)
+await dome.kalshi.markets.get_markets(params)
+await dome.kalshi.orderbooks.get_orderbooks(params)
+await dome.kalshi.markets.create_order(
+    ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
+    side="yes",
+    action="buy",
+    count=100,
+    order_type="limit",  # limit or market
+    yes_price=75  # cents (0-100)
+)
+# Convenience methods
+dome.kalshi.markets.buy(ticker, quantity, price)
+dome.kalshi.markets.sell(ticker, quantity, price)
 ```
 
 ### BacktestResult

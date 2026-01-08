@@ -24,6 +24,7 @@ class KalshiMarketsNamespace(BasePlatformAPI):
     ):
         super().__init__("kalshi", real_client, clock, portfolio, rate_limit)
         self._real_api = real_client.kalshi
+        self._real_client = real_client  # Store for orderbook access
 
     async def get_markets(self, params: dict = None) -> HistoricalKalshiMarketsResponse:
         """
@@ -175,12 +176,120 @@ class KalshiMarketsNamespace(BasePlatformAPI):
             backtest_time=at_time,
         )
 
+    async def create_order(
+        self,
+        ticker: str,
+        side: str,
+        action: str,
+        count: int,
+        order_type: str = "limit",
+        yes_price: int = None,
+        no_price: int = None,
+        client_order_id: str = None,
+    ) -> dict:
+        """
+        Create an order - matches kalshi SDK API signature.
+        
+        Matches: kalshi.KalshiClient.create_order()
+        
+        Args:
+            ticker: Market ticker (required)
+            side: "yes" or "no" (required)
+            action: "buy" or "sell" (required)
+            count: Number of contracts (integer, required)
+            order_type: "limit" or "market" (default: "limit")
+            yes_price: Price in cents (0-100) for YES side (required for limit orders)
+            no_price: Price in cents (0-100) for NO side (required for limit orders)
+            client_order_id: Optional custom order ID
+        
+        Returns:
+            Simulated order response matching kalshi SDK structure
+        
+        Example:
+            order = await dome.kalshi.markets.create_order(
+                ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
+                side="yes",
+                action="buy",
+                count=100,
+                order_type="limit",
+                yes_price=75  # cents
+            )
+        """
+        # Validate side
+        if side.lower() not in ["yes", "no"]:
+            raise ValueError(f"side must be 'yes' or 'no', got: {side}")
+        
+        # Validate action
+        if action.lower() not in ["buy", "sell"]:
+            raise ValueError(f"action must be 'buy' or 'sell', got: {action}")
+        
+        # Validate order_type
+        if order_type not in ["limit", "market"]:
+            raise ValueError(f"order_type must be 'limit' or 'market', got: {order_type}")
+        
+        # Validate price for limit orders
+        if order_type == "limit":
+            if side.lower() == "yes" and yes_price is None:
+                raise ValueError("yes_price is required for YES side limit orders")
+            if side.lower() == "no" and no_price is None:
+                raise ValueError("no_price is required for NO side limit orders")
+            if yes_price is not None and (yes_price < 0 or yes_price > 100):
+                raise ValueError(f"yes_price must be between 0-100 cents, got: {yes_price}")
+            if no_price is not None and (no_price < 0 or no_price > 100):
+                raise ValueError(f"no_price must be between 0-100 cents, got: {no_price}")
+        
+        # Get price (convert cents to decimal)
+        if order_type == "market":
+            limit_price = None
+        else:
+            if side.lower() == "yes":
+                limit_price = Decimal(yes_price) / Decimal(100)  # Convert cents to 0-1
+            else:
+                limit_price = Decimal(no_price) / Decimal(100)  # Convert cents to 0-1
+        
+        # Initialize order simulation if needed
+        self._init_order_simulation()
+        
+        # Determine actual side for order (YES/NO)
+        order_side = side.upper()
+        
+        # Create and execute order
+        simulated_order = await self._order_manager.create_order(
+            token_id=ticker,
+            side=order_side,
+            size=Decimal(count),
+            limit_price=limit_price,
+            order_type="MARKET" if order_type == "market" else "GTC",
+            expiration_time_seconds=None,
+            client_order_id=client_order_id,
+            platform=self.platform,
+        )
+        
+        # Return response matching kalshi SDK structure
+        return {
+            "order_id": simulated_order.order_id,
+            "client_order_id": simulated_order.client_order_id,
+            "ticker": simulated_order.token_id,
+            "side": simulated_order.side.lower(),
+            "action": action.lower(),
+            "count": int(simulated_order.size),
+            "type": order_type,
+            "yes_price": int(simulated_order.limit_price * 100) if simulated_order.limit_price else None,
+            "no_price": int((Decimal(1) - simulated_order.limit_price) * 100) if simulated_order.limit_price else None,
+            "status": simulated_order.status.value,
+            "filled_count": int(simulated_order.filled_size),
+            "fill_price": int(simulated_order.fill_price * 100) if simulated_order.fill_price else None,
+            "created_time": simulated_order.created_time,
+        }
+    
     def buy(self, ticker: str, quantity: Decimal, price: Decimal):
         """
         Simulate buying tokens (backtest only - convenience method).
         
         Note: Dome doesn't have trading methods (data API only).
         This is a convenience wrapper around portfolio.buy().
+        
+        For more control, use create_order() directly.
         """
         self._portfolio.buy(
             platform=self.platform,
@@ -189,6 +298,38 @@ class KalshiMarketsNamespace(BasePlatformAPI):
             price=Decimal(price),
             timestamp=self._clock.current_time,
         )
+    
+    async def buy_async(self, ticker: str, side: str, count: int, price_cents: int = None, order_type: str = "limit"):
+        """
+        Async version of buy() using create_order().
+        
+        Args:
+            ticker: Market ticker
+            side: "yes" or "no"
+            count: Number of contracts
+            price_cents: Price in cents (0-100) for limit orders
+            order_type: "limit" or "market" (default: "limit")
+        """
+        if order_type == "limit":
+            if side.lower() == "yes":
+                yes_price = price_cents
+                no_price = None
+            else:
+                yes_price = None
+                no_price = price_cents
+        else:
+            yes_price = None
+            no_price = None
+        
+        return await self.create_order(
+            ticker=ticker,
+            side=side,
+            action="buy",
+            count=count,
+            order_type=order_type,
+            yes_price=yes_price,
+            no_price=no_price,
+        )
 
     def sell(self, ticker: str, quantity: Decimal, price: Decimal):
         """
@@ -196,6 +337,8 @@ class KalshiMarketsNamespace(BasePlatformAPI):
         
         Note: Dome doesn't have trading methods (data API only).
         This is a convenience wrapper around portfolio.sell().
+        
+        For more control, use create_order() directly.
         """
         self._portfolio.sell(
             platform=self.platform,
@@ -203,5 +346,37 @@ class KalshiMarketsNamespace(BasePlatformAPI):
             quantity=Decimal(quantity),
             price=Decimal(price),
             timestamp=self._clock.current_time,
+        )
+    
+    async def sell_async(self, ticker: str, side: str, count: int, price_cents: int = None, order_type: str = "limit"):
+        """
+        Async version of sell() using create_order().
+        
+        Args:
+            ticker: Market ticker
+            side: "yes" or "no"
+            count: Number of contracts
+            price_cents: Price in cents (0-100) for limit orders
+            order_type: "limit" or "market" (default: "limit")
+        """
+        if order_type == "limit":
+            if side.lower() == "yes":
+                yes_price = price_cents
+                no_price = None
+            else:
+                yes_price = None
+                no_price = price_cents
+        else:
+            yes_price = None
+            no_price = None
+        
+        return await self.create_order(
+            ticker=ticker,
+            side=side,
+            action="sell",
+            count=count,
+            order_type=order_type,
+            yes_price=yes_price,
+            no_price=no_price,
         )
 
