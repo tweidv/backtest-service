@@ -227,15 +227,26 @@ class KalshiBacktestClient:
             Positions dict
         """
         if self.mode == "backtest":
-            return {
-                "positions": [
-                    {
-                        "ticker": token_id,
+            positions_list = []
+            for position_key, qty in self._portfolio.positions.items():
+                # Parse position key: could be "ticker:YES", "ticker:NO", or just "ticker" (legacy)
+                if ":" in position_key:
+                    ticker, side = position_key.rsplit(":", 1)
+                    positions_list.append({
+                        "ticker": ticker,
                         "count": int(qty),
-                        "side": "yes",  # Simplified - would need to track side separately
-                    }
-                    for token_id, qty in self._portfolio.positions.items()
-                ]
+                        "side": side.lower(),
+                    })
+                else:
+                    # Legacy format without side - default to "yes"
+                    positions_list.append({
+                        "ticker": position_key,
+                        "count": int(qty),
+                        "side": "yes",
+                    })
+            
+            return {
+                "positions": positions_list
             }
         else:
             # Live - delegate to real client

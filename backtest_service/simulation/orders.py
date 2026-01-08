@@ -181,12 +181,20 @@ class OrderManager:
         # Determine if this is a buy or sell
         is_buy = side_lower in ["yes", "buy"]
         
+        # For Kalshi, use composite key (ticker:side) to track YES/NO separately
+        # For Polymarket, token_id already uniquely identifies the side
+        if platform == "kalshi":
+            # Kalshi positions need side tracking: use "ticker:YES" or "ticker:NO"
+            position_key = f"{order.token_id}:{order.side.upper()}"
+        else:
+            position_key = order.token_id
+        
         try:
             if is_buy:
                 # Buying: reduce cash, increase position
                 self._portfolio.buy(
                     platform=platform,
-                    token_id=order.token_id,
+                    token_id=position_key,
                     quantity=fill_size,
                     price=fill_price,
                     timestamp=self._clock.current_time,
@@ -195,7 +203,7 @@ class OrderManager:
                 # Selling: increase cash, decrease position
                 self._portfolio.sell(
                     platform=platform,
-                    token_id=order.token_id,
+                    token_id=position_key,
                     quantity=fill_size,
                     price=fill_price,
                     timestamp=self._clock.current_time,

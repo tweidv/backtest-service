@@ -60,6 +60,20 @@ print(f"Return: {result.total_return_pct:.2f}%")
 - **Portfolio Simulation** — Track positions, cash, and P&L without real trades
 - **Drop-in Replacement** — Same API interface as the real SDKs
 
+## Known Limitations
+
+### Kalshi Support
+
+⚠️ **Kalshi support has been improved but still has some limitations due to Dome API constraints:**
+
+1. **Portfolio Valuation**: ✅ **Fixed** - Kalshi positions are now automatically valued using orderbook data. The system tracks YES and NO positions separately using composite keys (`ticker:YES` or `ticker:NO`). If automatic price detection fails, you can provide a custom `get_prices` function to `dome.run()`.
+
+2. **Position Side Tracking**: ✅ **Fixed** - Kalshi positions now track YES vs NO side separately. Positions are stored as `ticker:YES` or `ticker:NO` to prevent netting.
+
+3. **Matching Markets**: ✅ **Fixed** - Historical filtering is now implemented. Markets are filtered based on `start_time` if available. Markets without `start_time` are included (better safe than sorry to avoid false negatives).
+
+**Note**: Dome API's Kalshi support is more limited than Polymarket support. For full Kalshi backtesting, consider using the native `KalshiBacktestClient` which has better support.
+
 ## Installation
 
 ```bash

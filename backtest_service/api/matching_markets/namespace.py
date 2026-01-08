@@ -63,11 +63,19 @@ class MatchingMarketsNamespace:
                 filtered_list = []
                 for market in market_list:
                     # Check if market existed at backtest time
-                    # Polymarket markets: check if we can find the market
-                    # Kalshi markets: check if we can find the market
-                    # For now, include all - filtering would require additional API calls
-                    # TODO: Add historical filtering if needed
-                    filtered_list.append(market)
+                    # Markets may have start_time field, or we can infer from platform
+                    market_existed = True
+                    
+                    # Check if market has start_time field
+                    if hasattr(market, 'start_time') and market.start_time:
+                        market_existed = market.start_time <= at_time
+                    elif isinstance(market, dict) and 'start_time' in market:
+                        market_existed = market['start_time'] <= at_time
+                    # If no start_time available, we can't definitively check, so include it
+                    # (better to include than exclude if uncertain to avoid false negatives)
+                    
+                    if market_existed:
+                        filtered_list.append(market)
                 
                 if filtered_list:
                     filtered_markets[key] = filtered_list
@@ -130,8 +138,18 @@ class MatchingMarketsNamespace:
             for key, market_list in response.markets.items():
                 filtered_list = []
                 for market in market_list:
-                    # TODO: Add historical filtering if needed
-                    filtered_list.append(market)
+                    # Check if market existed at backtest time
+                    market_existed = True
+                    
+                    # Check if market has start_time field
+                    if hasattr(market, 'start_time') and market.start_time:
+                        market_existed = market.start_time <= at_time
+                    elif isinstance(market, dict) and 'start_time' in market:
+                        market_existed = market['start_time'] <= at_time
+                    # If no start_time available, include it (better safe than sorry)
+                    
+                    if market_existed:
+                        filtered_list.append(market)
                 
                 if filtered_list:
                     filtered_markets[key] = filtered_list

@@ -135,14 +135,16 @@ class OrderbookSimulator:
         no_bids = [[Decimal(str(b[0])) / Decimal(100), Decimal(str(b[1]))] 
                     for b in ob_data.get('no', [])] if ob_data.get('no') else []
         
-        # For YES: we buy from NO sellers, so use NO bids (but convert to YES price)
-        # For NO: we buy from YES sellers, so use YES bids (but convert to NO price)
-        # Simplified: treat YES as asks (sellers), NO as bids (buyers)
+        # Kalshi binary market structure:
+        # - To buy YES: we buy from NO sellers, so use NO bids and convert to YES price (1 - NO price)
+        # - To buy NO: we buy from YES sellers, so use YES bids and convert to NO price (1 - YES price)
+        # The actual price conversion is handled in can_fill_at_price() and get_market_price()
+        # Here we just parse and store both sides for later use
         return {
             "yes_bids": yes_bids,
             "no_bids": no_bids,
-            "bids": yes_bids + no_bids,  # Combined for compatibility
-            "asks": []  # In binary markets, asks = opposite side bids
+            "bids": yes_bids + no_bids,  # Combined for compatibility with generic code
+            "asks": []  # In binary markets, asks = opposite side bids (handled via conversion)
         }
     
     def can_fill_at_price(

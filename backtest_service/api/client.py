@@ -121,16 +121,80 @@ class DomeBacktestClient:
             async def auto_get_prices(dome):
                 """Auto-detect prices for all positions in portfolio"""
                 prices = {}
-                for token_id in dome.portfolio.positions.keys():
+                for position_key in dome.portfolio.positions.keys():
                     try:
                         # Try polymarket first
-                        data = await dome.polymarket.markets.get_market_price({"token_id": token_id})
-                        prices[token_id] = Decimal(str(data.price))
+                        data = await dome.polymarket.markets.get_market_price({"token_id": position_key})
+                        prices[position_key] = Decimal(str(data.price))
                     except:
                         try:
-                            # Try kalshi - need to get orderbook and extract price
-                            # For now, skip kalshi auto-detection (would need ticker lookup)
-                            pass
+                            # Try kalshi - check if this is a Kalshi position (format: "ticker:YES" or "ticker:NO")
+                            if ":" in position_key:
+                                # Kalshi position with side tracking
+                                ticker, side = position_key.rsplit(":", 1)
+                                # Get orderbook to extract price
+                                orderbook_data = await dome.kalshi.orderbooks.get_orderbooks({
+                                    "ticker": ticker,
+                                    "end_time": dome._clock.current_time * 1000,  # milliseconds
+                                    "limit": 1
+                                })
+                                
+                                if hasattr(orderbook_data, 'snapshots') and orderbook_data.snapshots:
+                                    snapshot = orderbook_data.snapshots[0]
+                                    # Extract price based on side
+                                    if side.upper() == "YES":
+                                        # For YES: get NO bids and convert to YES price
+                                        if hasattr(snapshot, 'orderbook'):
+                                            ob = snapshot.orderbook
+                                        elif isinstance(snapshot, dict):
+                                            ob = snapshot.get('orderbook', {})
+                                        else:
+                                            ob = {}
+                                        
+                                        no_bids = ob.get('no', []) if isinstance(ob, dict) else []
+                                        if no_bids:
+                                            no_price_cents = Decimal(str(no_bids[0][0]))
+                                            yes_price = Decimal(1) - (no_price_cents / Decimal(100))
+                                            prices[position_key] = yes_price
+                                    else:  # NO
+                                        # For NO: get YES bids and convert to NO price
+                                        if hasattr(snapshot, 'orderbook'):
+                                            ob = snapshot.orderbook
+                                        elif isinstance(snapshot, dict):
+                                            ob = snapshot.get('orderbook', {})
+                                        else:
+                                            ob = {}
+                                        
+                                        yes_bids = ob.get('yes', []) if isinstance(ob, dict) else []
+                                        if yes_bids:
+                                            yes_price_cents = Decimal(str(yes_bids[0][0]))
+                                            no_price = Decimal(1) - (yes_price_cents / Decimal(100))
+                                            prices[position_key] = no_price
+                            else:
+                                # Try as Kalshi ticker (legacy format without side)
+                                try:
+                                    orderbook_data = await dome.kalshi.orderbooks.get_orderbooks({
+                                        "ticker": position_key,
+                                        "end_time": dome._clock.current_time * 1000,
+                                        "limit": 1
+                                    })
+                                    if hasattr(orderbook_data, 'snapshots') and orderbook_data.snapshots:
+                                        snapshot = orderbook_data.snapshots[0]
+                                        # Default to YES price if side not specified
+                                        if hasattr(snapshot, 'orderbook'):
+                                            ob = snapshot.orderbook
+                                        elif isinstance(snapshot, dict):
+                                            ob = snapshot.get('orderbook', {})
+                                        else:
+                                            ob = {}
+                                        
+                                        no_bids = ob.get('no', []) if isinstance(ob, dict) else []
+                                        if no_bids:
+                                            no_price_cents = Decimal(str(no_bids[0][0]))
+                                            yes_price = Decimal(1) - (no_price_cents / Decimal(100))
+                                            prices[position_key] = yes_price
+                                except:
+                                    pass
                         except:
                             pass
                 return prices
