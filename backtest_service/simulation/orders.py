@@ -267,10 +267,10 @@ class OrderManager:
         
         # Determine if this is a maker or taker order for fee calculation
         # - Maker = limit order that rested on book (was pending) and now gets filled
-        # - Taker = market order OR limit order that filled immediately (crossed spread)
-        # Market orders are always takers
-        if order.order_type == "MARKET" or order.limit_price is None:
-            order_type_for_fees = "taker"  # Market orders always take liquidity
+        # - Taker = FOK order (market-like) OR limit order that filled immediately (crossed spread)
+        # FOK orders without limit_price are like market orders and are always takers
+        if (order.order_type == "FOK" and order.limit_price is None) or order.limit_price is None:
+            order_type_for_fees = "taker"  # Market-like orders always take liquidity
         elif order.was_pending:
             order_type_for_fees = "maker"  # Was pending = provided liquidity
         else:

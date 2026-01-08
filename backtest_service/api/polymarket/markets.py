@@ -457,6 +457,8 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         status = simulated_order.status.value
         if simulated_order.status in [OrderStatus.MATCHED, OrderStatus.FILLED]:
             status = "matched"  # Dome API format
+        elif simulated_order.status == OrderStatus.PARTIALLY_FILLED:
+            status = "partially_filled"  # Partial fill status
         elif simulated_order.status == OrderStatus.PENDING:
             status = "pending"
         elif simulated_order.status == OrderStatus.REJECTED:
