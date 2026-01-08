@@ -198,10 +198,13 @@ class PlatformAPI:
         - If params['status'] == 'open': only markets that were OPEN at backtest time
         - If params['status'] == 'closed': only markets that were CLOSED at backtest time
         - winning_side is hidden if market wasn't resolved yet at backtest time
+        - Uses API start_time and end_time parameters to fetch historical markets
+        - Handles pagination to get all markets in the time window
         
         Args:
             params: Same params as dome API (tags, min_volume, limit, offset, status, etc.)
                    The 'status' param is intercepted and applied historically.
+                   'start_time' and 'end_time' can be provided to override defaults.
         
         Returns:
             HistoricalMarketsResponse with filtered markets and metadata
@@ -212,23 +215,57 @@ class PlatformAPI:
         # Extract and remove status filter - we'll apply it ourselves
         requested_status = params.pop('status', None)
         
-        # We need to fetch from API without status filter because:
-        # - A market that is "closed" NOW might have been "open" at backtest time
-        # - A market that is "open" NOW might not have existed at backtest time
-        # So we fetch more broadly and filter client-side
-        
-        # To be efficient, if user wants "closed" markets at historical time,
-        # we can still ask API for "closed" (subset of what we need)
-        # But if user wants "open" at historical time, we need BOTH statuses
         api_params = params.copy()
         
-        # Fetch from real API
-        response = await self._call_api(self._real_api.markets.get_markets, api_params)
+        # Set time window to get markets that could have existed at backtest time
+        # We use a large end_time window to catch long-running markets (up to 1 year)
+        if 'start_time' not in api_params:
+            # Get markets that started up to 1 year before backtest time
+            api_params['start_time'] = at_time - (365 * 24 * 3600)
         
-        # Filter markets based on backtest time
+        if 'end_time' not in api_params:
+            # Set end_time far enough in the future to catch long-running markets
+            # Use 2 years to ensure we get markets that started before backtest_time
+            # but end much later (markets can be up to 1 year long)
+            # We'll filter precisely client-side anyway
+            api_params['end_time'] = at_time + (730 * 24 * 3600)  # 2 years after backtest
+        
+        # Handle pagination to get ALL markets in the time window
+        all_markets = []
+        offset = 0
+        limit = api_params.get('limit', 100)
+        original_limit = limit  # Save original limit for final filtering
+        
+        while True:
+            api_params['offset'] = offset
+            api_params['limit'] = min(limit, 100)  # API max is 100
+            
+            response = await self._call_api(self._real_api.markets.get_markets, api_params)
+            
+            if not response.markets:
+                break
+            
+            all_markets.extend(response.markets)
+            
+            # Check pagination
+            if hasattr(response, 'pagination') and response.pagination:
+                if not response.pagination.get('has_more', False):
+                    break
+                offset += len(response.markets)
+            else:
+                # If no pagination info, stop if we got fewer than limit
+                if len(response.markets) < api_params['limit']:
+                    break
+                offset += len(response.markets)
+            
+            # Safety: don't fetch forever
+            if offset > 10000:  # Reasonable upper bound
+                break
+        
+        # Filter markets based on backtest time (precise filtering)
         filtered_markets = []
         
-        for market in response.markets:
+        for market in all_markets:
             # Must have existed at backtest time
             if not self._market_existed_at_time(market, at_time):
                 continue
@@ -244,6 +281,10 @@ class PlatformAPI:
             # Convert to HistoricalMarket with proper historical context
             historical_market = HistoricalMarket.from_market(market, at_time)
             filtered_markets.append(historical_market)
+        
+        # Apply original limit if specified (after filtering)
+        if original_limit and original_limit < len(filtered_markets):
+            filtered_markets = filtered_markets[:original_limit]
         
         return HistoricalMarketsResponse(
             markets=filtered_markets,
@@ -328,6 +369,7 @@ class KalshiAPI:
         Get Kalshi markets that existed at the current backtest time.
         
         Same historical filtering logic as Polymarket get_markets.
+        Uses API start_time and end_time parameters to fetch historical markets.
         """
         params = params or {}
         at_time = self._clock.current_time
@@ -335,11 +377,46 @@ class KalshiAPI:
         requested_status = params.pop('status', None)
         api_params = params.copy()
         
-        response = await self._call_api(self._real_api.markets.get_markets, api_params)
+        # Set time window to get markets that could have existed at backtest time
+        if 'start_time' not in api_params:
+            api_params['start_time'] = at_time - (365 * 24 * 3600)  # 1 year before
+        
+        if 'end_time' not in api_params:
+            api_params['end_time'] = at_time + (730 * 24 * 3600)  # 2 years after
+        
+        # Handle pagination to get ALL markets in the time window
+        all_markets = []
+        offset = 0
+        limit = api_params.get('limit', 100)
+        original_limit = limit
+        
+        while True:
+            api_params['offset'] = offset
+            api_params['limit'] = min(limit, 100)  # API max is 100
+            
+            response = await self._call_api(self._real_api.markets.get_markets, api_params)
+            
+            if not response.markets:
+                break
+            
+            all_markets.extend(response.markets)
+            
+            # Check pagination
+            if hasattr(response, 'pagination') and response.pagination:
+                if not response.pagination.get('has_more', False):
+                    break
+                offset += len(response.markets)
+            else:
+                if len(response.markets) < api_params['limit']:
+                    break
+                offset += len(response.markets)
+            
+            if offset > 10000:  # Safety limit
+                break
         
         filtered_markets = []
         
-        for market in response.markets:
+        for market in all_markets:
             if not self._market_existed_at_time(market, at_time):
                 continue
             
@@ -352,6 +429,10 @@ class KalshiAPI:
             
             historical_market = HistoricalKalshiMarket.from_market(market, at_time)
             filtered_markets.append(historical_market)
+        
+        # Apply original limit if specified (after filtering)
+        if original_limit and original_limit < len(filtered_markets):
+            filtered_markets = filtered_markets[:original_limit]
         
         return HistoricalKalshiMarketsResponse(
             markets=filtered_markets,

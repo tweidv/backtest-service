@@ -180,18 +180,62 @@
                     <textarea 
                         id="code-input"
                         class="hidden"
-                    ># Paste your strategy code here
+                    >from decimal import Decimal
 
 async def my_strategy(dome):
-    price = await dome.polymarket.get_market_price({
-        'token_id': '21742633143463906290569050155826241533067272736897614950488156847949938836455'
-    })
-    
-    if price.price < 0.5 and dome.portfolio.cash > 100:
-        dome.polymarket.buy(...)
+    """
+    Momentum-based trading strategy:
+    - Discovers high-volume markets dynamically
+    - Buys on price drops (mean reversion)
+    - Sells on price increases (take profit)
+    - Manages position sizes (10% of cash per trade)
+    """
+    try:
+        # Discover liquid markets (high volume = better liquidity)
+        markets = await dome.polymarket.get_markets({
+            'status': 'open',
+            'min_volume': 500000,  # $500k+ volume
+            'limit': 3
+        })
         
-# Or describe in natural language (coming soon):
-# 'Buy BTC $100k when price drops below 0.5, sell above 0.7'</textarea>
+        if not markets.markets:
+            return  # No markets found
+        
+        # Trade the first liquid market
+        market = markets.markets[0]
+        token_id = market.side_a.id
+        
+        # Get current price
+        price_data = await dome.polymarket.get_market_price({'token_id': token_id})
+        price = Decimal(str(price_data.price))
+        
+        # Check if we have a position
+        position = dome.portfolio.positions.get(token_id, Decimal(0))
+        cash = dome.portfolio.cash
+        
+        # Strategy: Mean reversion with momentum
+        # Buy when price is low (below 0.45) and we have cash
+        if price < Decimal('0.45') and cash > 100 and position == 0:
+            # Risk 10% of cash per trade
+            trade_size = (cash * Decimal('0.1')) / price
+            trade_size = trade_size.quantize(Decimal('1'))
+            if trade_size > 0:
+                dome.polymarket.buy(token_id, trade_size, price)
+        
+        # Sell when price is high (above 0.65) and we have position
+        elif price > Decimal('0.65') and position > 0:
+            dome.polymarket.sell(token_id, position, price)
+        
+        # Take profit at 0.60 if we have position
+        elif price > Decimal('0.60') and position > 0:
+            # Sell 50% of position to lock in profit
+            sell_qty = (position * Decimal('0.5')).quantize(Decimal('1'))
+            if sell_qty > 0:
+                dome.polymarket.sell(token_id, sell_qty, price)
+    
+    except Exception as e:
+        # Silently handle API errors (rate limits, etc.)
+        pass</textarea>
                     <div id="code-editor" class="border-3 border-black"></div>
                 </div>
             </div>
@@ -229,19 +273,19 @@ async def my_strategy(dome):
                 <div class="grid grid-cols-4 gap-4">
                     <div class="border-3 border-black p-4 bg-gray-50">
                         <div class="text-sm font-bold text-gray-600 uppercase mb-1">Return</div>
-                        <div class="text-3xl font-black text-brier-green">+12.4%</div>
+                        <div id="result-return" class="text-3xl font-black text-brier-green">-</div>
                     </div>
                     <div class="border-3 border-black p-4 bg-gray-50">
                         <div class="text-sm font-bold text-gray-600 uppercase mb-1">Final Value</div>
-                        <div class="text-3xl font-black text-brier-dark">$11,240</div>
+                        <div id="result-final-value" class="text-3xl font-black text-brier-dark">-</div>
                     </div>
                     <div class="border-3 border-black p-4 bg-gray-50">
                         <div class="text-sm font-bold text-gray-600 uppercase mb-1">Trades</div>
-                        <div class="text-3xl font-black text-brier-dark">14</div>
+                        <div id="result-trades" class="text-3xl font-black text-brier-dark">-</div>
                     </div>
                     <div class="border-3 border-black p-4 bg-gray-50">
                         <div class="text-sm font-bold text-gray-600 uppercase mb-1">Duration</div>
-                        <div class="text-3xl font-black text-brier-dark">2.1s</div>
+                        <div id="result-duration" class="text-3xl font-black text-brier-dark">-</div>
                     </div>
                 </div>
             </div>
@@ -307,18 +351,81 @@ async def my_strategy(dome):
         // Set editor height
         editor.setSize(null, '384px'); // 96 * 4 = 384px (h-96)
 
-        // Simple demo interaction
-        document.getElementById('run-backtest').addEventListener('click', function() {
+        // Run backtest
+        document.getElementById('run-backtest').addEventListener('click', async function() {
             const button = this;
+            const originalText = button.textContent;
             button.textContent = 'Running... ⚡';
             button.disabled = true;
             
-            setTimeout(() => {
-                button.textContent = 'Run Backtest →';
+            // Hide previous results
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.classList.add('hidden');
+            
+            try {
+                // Get code from editor
+                const code = editor.getValue().trim();
+                
+                // Validate code is not empty
+                if (!code) {
+                    throw new Error('Please enter some code to backtest');
+                }
+                
+                // Get configuration - find inputs by their position in the grid
+                const dateInputs = document.querySelectorAll('input[type="date"]');
+                const textInputs = document.querySelectorAll('input[type="text"]');
+                
+                const startDate = dateInputs[0]?.value || '2024-10-24';
+                const endDate = dateInputs[1]?.value || '2024-10-25';
+                const initialCapital = textInputs[0]?.value || '$10,000';
+                
+                // Call API
+                const response = await fetch('/api/backtest', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        code: code,
+                        start_date: startDate,
+                        end_date: endDate,
+                        initial_cash: initialCapital,
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    // Show more detailed error message
+                    let errorMsg = data.error || 'Backtest failed';
+                    if (data.line) {
+                        errorMsg += ` (line ${data.line}`;
+                        if (data.offset) {
+                            errorMsg += `, column ${data.offset}`;
+                        }
+                        errorMsg += ')';
+                    }
+                    throw new Error(errorMsg);
+                }
+                
+                // Display results
+                const result = data.result;
+                document.getElementById('result-return').textContent = `${result.total_return_pct >= 0 ? '+' : ''}${result.total_return_pct.toFixed(2)}%`;
+                document.getElementById('result-return').className = `text-3xl font-black ${result.total_return_pct >= 0 ? 'text-brier-green' : 'text-red-600'}`;
+                document.getElementById('result-final-value').textContent = `$${parseFloat(result.final_value).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                document.getElementById('result-trades').textContent = result.trades_count;
+                document.getElementById('result-duration').textContent = 'Complete';
+                
+                resultsDiv.classList.remove('hidden');
+                resultsDiv.scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+                console.error('Backtest error:', error);
+            } finally {
+                button.textContent = originalText;
                 button.disabled = false;
-                document.getElementById('results').classList.remove('hidden');
-                document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
-            }, 2000);
+            }
         });
     </script>
 </body>
