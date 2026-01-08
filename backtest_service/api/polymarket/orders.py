@@ -54,5 +54,38 @@ class PolymarketOrdersNamespace(BasePlatformAPI):
         if 'start_time' in params:
             params['start_time'] = min(params['start_time'], at_time)
         
-        return await self._call_api(self._real_api.orders.get_orders, params)
+        response = await self._call_api(self._real_api.orders.get_orders, params)
+        
+        # CRITICAL: Filter response data to remove orders after backtest time
+        # The API may return orders up to end_time, but we need to ensure no future data
+        if hasattr(response, 'orders') and response.orders:
+            filtered_orders = []
+            for order in response.orders:
+                # Get timestamp from order (field name: timestamp, in seconds)
+                order_timestamp = None
+                if hasattr(order, 'timestamp'):
+                    order_timestamp = order.timestamp
+                elif isinstance(order, dict):
+                    order_timestamp = order.get('timestamp')
+                
+                # Only include orders that occurred at or before backtest time
+                if order_timestamp is not None and order_timestamp <= at_time:
+                    filtered_orders.append(order)
+            
+            # Create filtered response
+            try:
+                import copy
+                if hasattr(response, '__dict__'):
+                    filtered_response = copy.copy(response)
+                    filtered_response.orders = filtered_orders
+                    return filtered_response
+            except:
+                class FilteredResponse:
+                    def __init__(self, orders, pagination=None):
+                        self.orders = orders
+                        self.pagination = pagination
+                pagination = getattr(response, 'pagination', None)
+                return FilteredResponse(filtered_orders, pagination)
+        
+        return response
 

@@ -48,5 +48,39 @@ class KalshiOrderbooksNamespace(BasePlatformAPI):
         if 'start_time' in params:
             self._cap_time_at_backtest(params, 'start_time', is_milliseconds=True)
         
-        return await self._call_api(self._real_api.orderbooks.get_orderbooks, params)
+        response = await self._call_api(self._real_api.orderbooks.get_orderbooks, params)
+        
+        # CRITICAL: Filter response data to remove orderbook snapshots after backtest time
+        # Kalshi orderbooks use 'timestamp' field (in milliseconds)
+        if hasattr(response, 'snapshots') and response.snapshots:
+            at_time_ms = self._clock.current_time * 1000  # Convert to milliseconds
+            filtered_snapshots = []
+            for snapshot in response.snapshots:
+                # Get timestamp from snapshot (field name: timestamp, in milliseconds)
+                snapshot_timestamp = None
+                if hasattr(snapshot, 'timestamp'):
+                    snapshot_timestamp = snapshot.timestamp
+                elif isinstance(snapshot, dict):
+                    snapshot_timestamp = snapshot.get('timestamp')
+                
+                # Only include snapshots that occurred at or before backtest time
+                if snapshot_timestamp is not None and snapshot_timestamp <= at_time_ms:
+                    filtered_snapshots.append(snapshot)
+            
+            # Create filtered response
+            try:
+                import copy
+                if hasattr(response, '__dict__'):
+                    filtered_response = copy.copy(response)
+                    filtered_response.snapshots = filtered_snapshots
+                    return filtered_response
+            except:
+                class FilteredResponse:
+                    def __init__(self, snapshots, pagination=None):
+                        self.snapshots = snapshots
+                        self.pagination = pagination
+                pagination = getattr(response, 'pagination', None)
+                return FilteredResponse(filtered_snapshots, pagination)
+        
+        return response
 

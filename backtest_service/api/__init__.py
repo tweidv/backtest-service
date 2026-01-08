@@ -10,6 +10,8 @@ from .models import (
 from .base_api import BasePlatformAPI
 from .polymarket import PolymarketNamespace
 from .kalshi import KalshiNamespace
+from .matching_markets import MatchingMarketsNamespace
+from .crypto_prices import CryptoPricesNamespace
 
 __all__ = [
     'DomeBacktestClient',
@@ -20,4 +22,6 @@ __all__ = [
     'BasePlatformAPI',
     'PolymarketNamespace',
     'KalshiNamespace',
+    'MatchingMarketsNamespace',
+    'CryptoPricesNamespace',
 ]

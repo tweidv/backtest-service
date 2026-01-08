@@ -81,10 +81,9 @@ class PolymarketWalletNamespace(BasePlatformAPI):
         if granularity not in ['day', 'week', 'month', 'year', 'all']:
             raise ValueError(f"granularity must be one of: day, week, month, year, all. Got: {granularity}")
         
-        params = params.copy()
         at_time = self._clock.current_time
         
-        # Cap end_time at backtest time (wallet_pnl uses seconds)
+        # Cap end_time at backtest time (wallet_pnl uses seconds) - modify in place first
         if 'end_time' in params:
             params['end_time'] = min(params['end_time'], at_time)
         else:
@@ -94,5 +93,55 @@ class PolymarketWalletNamespace(BasePlatformAPI):
         if 'start_time' in params:
             params['start_time'] = min(params['start_time'], at_time)
         
-        return await self._call_api(self._real_api.wallet.get_wallet_pnl, params)
+        # Now make a copy for the API call (API might modify it)
+        params = params.copy()
+        
+        response = await self._call_api(self._real_api.wallet.get_wallet_pnl, params)
+        
+        # CRITICAL: Filter response data to remove PnL data points after backtest time
+        # Wallet PnL has pnl_over_time array with timestamp fields (in seconds)
+        if hasattr(response, 'pnl_over_time') and response.pnl_over_time:
+            filtered_pnl = []
+            for pnl_entry in response.pnl_over_time:
+                # Get timestamp from PnL entry (field name: timestamp, in seconds)
+                pnl_timestamp = None
+                if hasattr(pnl_entry, 'timestamp'):
+                    pnl_timestamp = pnl_entry.timestamp
+                elif isinstance(pnl_entry, dict):
+                    pnl_timestamp = pnl_entry.get('timestamp')
+                
+                # Only include PnL data points that occurred at or before backtest time
+                if pnl_timestamp is not None and pnl_timestamp <= at_time:
+                    filtered_pnl.append(pnl_entry)
+            
+            # Create filtered response
+            try:
+                import copy
+                if hasattr(response, '__dict__'):
+                    filtered_response = copy.copy(response)
+                    filtered_response.pnl_over_time = filtered_pnl
+                    # Also update end_time in response to match filtered data
+                    if filtered_pnl:
+                        filtered_response.end_time = min(
+                            filtered_response.end_time if hasattr(filtered_response, 'end_time') else at_time,
+                            at_time
+                        )
+                    return filtered_response
+            except:
+                class FilteredResponse:
+                    def __init__(self, pnl_over_time, granularity=None, start_time=None, end_time=None, wallet_address=None):
+                        self.pnl_over_time = pnl_over_time
+                        self.granularity = granularity
+                        self.start_time = start_time
+                        self.end_time = end_time
+                        self.wallet_address = wallet_address
+                return FilteredResponse(
+                    filtered_pnl,
+                    getattr(response, 'granularity', None),
+                    getattr(response, 'start_time', None),
+                    at_time,
+                    getattr(response, 'wallet_address', None)
+                )
+        
+        return response
 

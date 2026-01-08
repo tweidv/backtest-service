@@ -57,5 +57,38 @@ class PolymarketActivityNamespace(BasePlatformAPI):
         if 'start_time' in params:
             params['start_time'] = min(params['start_time'], at_time)
         
-        return await self._call_api(self._real_api.activity.get_activity, params)
+        response = await self._call_api(self._real_api.activity.get_activity, params)
+        
+        # CRITICAL: Filter response data to remove activities after backtest time
+        # Activity uses 'timestamp' field (in seconds)
+        if hasattr(response, 'activities') and response.activities:
+            filtered_activities = []
+            for activity in response.activities:
+                # Get timestamp from activity (field name: timestamp, in seconds)
+                activity_timestamp = None
+                if hasattr(activity, 'timestamp'):
+                    activity_timestamp = activity.timestamp
+                elif isinstance(activity, dict):
+                    activity_timestamp = activity.get('timestamp')
+                
+                # Only include activities that occurred at or before backtest time
+                if activity_timestamp is not None and activity_timestamp <= at_time:
+                    filtered_activities.append(activity)
+            
+            # Create filtered response
+            try:
+                import copy
+                if hasattr(response, '__dict__'):
+                    filtered_response = copy.copy(response)
+                    filtered_response.activities = filtered_activities
+                    return filtered_response
+            except:
+                class FilteredResponse:
+                    def __init__(self, activities, pagination=None):
+                        self.activities = activities
+                        self.pagination = pagination
+                pagination = getattr(response, 'pagination', None)
+                return FilteredResponse(filtered_activities, pagination)
+        
+        return response
 

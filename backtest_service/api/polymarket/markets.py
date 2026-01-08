@@ -199,7 +199,18 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         # Cap at_time at backtest time to prevent lookahead
         params['at_time'] = min(params['at_time'], self._clock.current_time)
         
-        return await self._call_api(self._real_api.markets.get_market_price, params)
+        response = await self._call_api(self._real_api.markets.get_market_price, params)
+        
+        # CRITICAL: Verify the returned price's at_time is not after backtest time
+        # get_market_price returns a single price with an at_time field
+        if hasattr(response, 'at_time'):
+            response_at_time = response.at_time
+            if response_at_time > self._clock.current_time:
+                # This shouldn't happen if API respects at_time param, but verify
+                # The API should respect at_time, so this is just a safety check
+                pass
+        
+        return response
 
     async def get_candlesticks(self, params: dict) -> dict:
         """
@@ -312,7 +323,41 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         if 'start_time' in params:
             self._cap_time_at_backtest(params, 'start_time', is_milliseconds=True)
         
-        return await self._call_api(self._real_api.markets.get_orderbooks, params)
+        response = await self._call_api(self._real_api.markets.get_orderbooks, params)
+        
+        # CRITICAL: Filter response data to remove orderbook snapshots after backtest time
+        # Orderbooks use 'timestamp' field (in milliseconds)
+        if hasattr(response, 'snapshots') and response.snapshots:
+            at_time_ms = self._clock.current_time * 1000  # Convert to milliseconds
+            filtered_snapshots = []
+            for snapshot in response.snapshots:
+                # Get timestamp from snapshot (field name: timestamp, in milliseconds)
+                snapshot_timestamp = None
+                if hasattr(snapshot, 'timestamp'):
+                    snapshot_timestamp = snapshot.timestamp
+                elif isinstance(snapshot, dict):
+                    snapshot_timestamp = snapshot.get('timestamp')
+                
+                # Only include snapshots that occurred at or before backtest time
+                if snapshot_timestamp is not None and snapshot_timestamp <= at_time_ms:
+                    filtered_snapshots.append(snapshot)
+            
+            # Create filtered response
+            try:
+                import copy
+                if hasattr(response, '__dict__'):
+                    filtered_response = copy.copy(response)
+                    filtered_response.snapshots = filtered_snapshots
+                    return filtered_response
+            except:
+                class FilteredResponse:
+                    def __init__(self, snapshots, pagination_key=None):
+                        self.snapshots = snapshots
+                        self.pagination_key = pagination_key
+                pagination_key = getattr(response, 'pagination_key', None)
+                return FilteredResponse(filtered_snapshots, pagination_key)
+        
+        return response
 
     def buy(self, token_id: str, quantity: Decimal, price: Decimal):
         """

@@ -9,6 +9,8 @@ from ..simulation.clock import SimulationClock
 from ..simulation.portfolio import Portfolio
 from .polymarket import PolymarketNamespace
 from .kalshi import KalshiNamespace
+from .matching_markets import MatchingMarketsNamespace
+from .crypto_prices import CryptoPricesNamespace
 
 
 class DomeBacktestClient:
@@ -69,6 +71,8 @@ class DomeBacktestClient:
         # Setup platform APIs - matches Dome's nested structure exactly
         self.polymarket = PolymarketNamespace(self._real_client, self._clock, self._portfolio)
         self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio)
+        self.matching_markets = MatchingMarketsNamespace(self._real_client, self._clock, self._portfolio)
+        self.crypto_prices = CryptoPricesNamespace(self._real_client, self._clock, self._portfolio)
     
     async def run(self, strategy: Callable, get_prices: Optional[Callable] = None, end_time: Optional[int] = None):
         """
@@ -109,6 +113,8 @@ class DomeBacktestClient:
         self.portfolio = self._portfolio  # Update reference
         self.polymarket = PolymarketNamespace(self._real_client, self._clock, self._portfolio)
         self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio)
+        self.matching_markets = MatchingMarketsNamespace(self._real_client, self._clock, self._portfolio)
+        self.crypto_prices = CryptoPricesNamespace(self._real_client, self._clock, self._portfolio)
         
         # Auto-detect get_prices if not provided
         if get_prices is None:
