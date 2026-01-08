@@ -197,7 +197,7 @@ async def my_strategy(dome):
             </div>
 
             <!-- Configuration -->
-            <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="grid grid-cols-4 gap-4 mb-6">
                 <div class="bg-white neobrutalist-sm p-4">
                     <label class="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2">Start Date</label>
                     <input type="date" class="w-full border-3 border-black px-3 py-2 font-semibold" value="2024-10-24"/>
@@ -210,15 +210,13 @@ async def my_strategy(dome):
                     <label class="block text-xs font-black text-gray-700 uppercase tracking-wider mb-2">Initial Capital</label>
                     <input type="text" class="w-full border-3 border-black px-3 py-2 font-semibold" value="$10,000"/>
                 </div>
+                <button 
+                    id="run-backtest"
+                    class="bg-brier-green border-3 border-black font-black text-lg text-white uppercase tracking-wider neobrutalist-sm hover-lift transition-transform flex items-center justify-center"
+                >
+                    Run Backtest →
+                </button>
             </div>
-
-            <!-- Run Button -->
-            <button 
-                id="run-backtest"
-                class="w-full bg-brier-green border-4 border-black py-6 font-black text-xl text-white uppercase tracking-wider neobrutalist hover-lift transition-transform"
-            >
-                Run Backtest →
-            </button>
 
             <!-- Results Placeholder -->
             <div id="results" class="hidden mt-8 bg-white neobrutalist p-8">
