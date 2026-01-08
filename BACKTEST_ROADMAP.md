@@ -32,7 +32,7 @@ This document outlines the roadmap for expanding the backtest service to cover a
 ## Priority 1: Critical for Advanced Backtesting
 
 ### 1.1 Candlestick Data Support
-**Status:** Not Implemented  
+**Status:** ✅ Implemented  
 **API Endpoint:** `/polymarket/candlesticks/{condition_id}`  
 **Priority:** HIGH
 
@@ -42,11 +42,12 @@ This document outlines the roadmap for expanding the backtest service to cover a
 - Better price interpolation between trades
 - Standard format for most trading strategies
 
-**Implementation Requirements:**
-- Add `get_candlesticks()` to `PlatformAPI`
-- Support intervals: 1m, 1h, 1d (with range limits)
-- Historical filtering: only return candlesticks up to `clock.current_time`
-- Handle pagination for long time ranges
+**Implementation Status:**
+- ✅ Added `get_candlesticks()` to `PolymarketMarketsNamespace` (matches Dome structure)
+- ✅ Supports intervals: 1m (1), 1h (60), 1d (1440) with range limits
+- ✅ Historical filtering: only returns candlesticks up to `clock.current_time`
+- ✅ Range validation: 1m (max 1 week), 1h (max 1 month), 1d (max 1 year)
+- ✅ Matches Dome's exact API structure: `dome.polymarket.markets.get_candlesticks()`
 
 **Use Cases:**
 - Moving average strategies
