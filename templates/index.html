@@ -192,17 +192,17 @@ async def my_strategy(dome):
     """
     try:
         # Discover liquid markets (high volume = better liquidity)
-        markets = await dome.polymarket.get_markets({
+        response = await dome.polymarket.get_markets({
             'status': 'open',
             'min_volume': 500000,  # $500k+ volume
             'limit': 3
         })
         
-        if not markets.markets:
+        if not response.markets:
             return  # No markets found
         
         # Trade the first liquid market
-        market = markets.markets[0]
+        market = response.markets[0]
         token_id = market.side_a.id
         
         # Get current price
@@ -394,6 +394,7 @@ async def my_strategy(dome):
                 });
                 
                 const data = await response.json();
+                console.log('Response data:', data);
                 
                 if (!response.ok) {
                     // Show more detailed error message
@@ -408,14 +409,28 @@ async def my_strategy(dome):
                     throw new Error(errorMsg);
                 }
                 
+                // Check if we have a result
+                if (!data.result) {
+                    console.error('Unexpected response structure:', data);
+                    throw new Error('Invalid response from server');
+                }
+                
                 // Display results
                 const result = data.result;
-                document.getElementById('result-return').textContent = `${result.total_return_pct >= 0 ? '+' : ''}${result.total_return_pct.toFixed(2)}%`;
-                document.getElementById('result-return').className = `text-3xl font-black ${result.total_return_pct >= 0 ? 'text-brier-green' : 'text-red-600'}`;
-                document.getElementById('result-final-value').textContent = `$${parseFloat(result.final_value).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                document.getElementById('result-trades').textContent = result.trades_count;
+                console.log('Result data:', result);
+                
+                // Safely format and display results
+                const returnPct = result.total_return_pct || 0;
+                const finalValue = parseFloat(result.final_value) || 0;
+                const tradesCount = result.trades_count || 0;
+                
+                document.getElementById('result-return').textContent = `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%`;
+                document.getElementById('result-return').className = `text-3xl font-black ${returnPct >= 0 ? 'text-brier-green' : 'text-red-600'}`;
+                document.getElementById('result-final-value').textContent = `$${finalValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                document.getElementById('result-trades').textContent = tradesCount;
                 document.getElementById('result-duration').textContent = 'Complete';
                 
+                console.log('Showing results div');
                 resultsDiv.classList.remove('hidden');
                 resultsDiv.scrollIntoView({ behavior: 'smooth' });
                 

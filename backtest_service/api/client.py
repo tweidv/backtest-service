@@ -1,5 +1,7 @@
 import asyncio
 import inspect
+import json
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import List, Optional, Callable
@@ -158,13 +160,54 @@ class PlatformAPI:
         self._rate_limit = rate_limit  # seconds between API calls
 
     async def _call_api(self, method, params: dict):
-        """Call API method with rate limiting, handling both sync and async methods"""
-        await asyncio.sleep(self._rate_limit)
-        result = method(params)
-        # If the SDK returns a coroutine, await it
-        if inspect.iscoroutine(result):
-            return await result
-        return result
+        """Call API method with rate limiting and retry logic for 429 errors"""
+        max_retries = 5
+        base_delay = self._rate_limit
+        
+        for attempt in range(max_retries):
+            # Rate limit delay
+            await asyncio.sleep(base_delay)
+            
+            try:
+                result = method(params)
+                # If the SDK returns a coroutine, await it
+                if inspect.iscoroutine(result):
+                    result = await result
+                return result
+            except Exception as e:
+                error_str = str(e)
+                
+                # Check if it's a 429 rate limit error or 5xx server error (502, 503, 504, etc.)
+                is_rate_limit = "429" in error_str or "Rate Limit" in error_str or "rate limit" in error_str.lower()
+                is_server_error = any(code in error_str for code in ["502", "503", "504", "500", "Bad Gateway", "Service Unavailable"])
+                
+                if is_rate_limit or is_server_error:
+                    # Try to extract retry_after from error message
+                    retry_after = base_delay * (2 ** attempt)  # Exponential backoff
+                    if "retry_after" in error_str.lower():
+                        # Try to parse retry_after from JSON in error message
+                        try:
+                            # Look for JSON in the error message (handle nested JSON)
+                            json_match = re.search(r'\{.*"retry_after".*\}', error_str, re.DOTALL)
+                            if json_match:
+                                error_data = json.loads(json_match.group())
+                                if 'retry_after' in error_data:
+                                    retry_after = float(error_data['retry_after']) + 1
+                        except:
+                            pass
+                    
+                    if attempt < max_retries - 1:
+                        error_type = "Rate limited" if is_rate_limit else "Server error"
+                        print(f"{error_type}, retrying in {retry_after:.1f}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(retry_after)
+                        continue
+                    else:
+                        error_type = "Rate limit" if is_rate_limit else "Server error"
+                        print(f"{error_type} after {max_retries} attempts")
+                        raise
+                else:
+                    # Not a rate limit error, re-raise immediately
+                    raise
 
     def _market_existed_at_time(self, market, at_time: int) -> bool:
         """Check if market existed (was created) at the given time."""
@@ -249,7 +292,9 @@ class PlatformAPI:
             
             # Check pagination
             if hasattr(response, 'pagination') and response.pagination:
-                if not response.pagination.get('has_more', False):
+                # Pagination is an object, not a dict - access has_more as attribute
+                has_more = getattr(response.pagination, 'has_more', False)
+                if not has_more:
                     break
                 offset += len(response.markets)
             else:
@@ -340,12 +385,53 @@ class KalshiAPI:
         self._rate_limit = rate_limit
 
     async def _call_api(self, method, params: dict):
-        """Call API method with rate limiting."""
-        await asyncio.sleep(self._rate_limit)
-        result = method(params)
-        if inspect.iscoroutine(result):
-            return await result
-        return result
+        """Call API method with rate limiting and retry logic for 429 errors"""
+        max_retries = 5
+        base_delay = self._rate_limit
+        
+        for attempt in range(max_retries):
+            # Rate limit delay
+            await asyncio.sleep(base_delay)
+            
+            try:
+                result = method(params)
+                if inspect.iscoroutine(result):
+                    result = await result
+                return result
+            except Exception as e:
+                error_str = str(e)
+                
+                # Check if it's a 429 rate limit error or 5xx server error (502, 503, 504, etc.)
+                is_rate_limit = "429" in error_str or "Rate Limit" in error_str or "rate limit" in error_str.lower()
+                is_server_error = any(code in error_str for code in ["502", "503", "504", "500", "Bad Gateway", "Service Unavailable"])
+                
+                if is_rate_limit or is_server_error:
+                    # Try to extract retry_after from error message
+                    retry_after = base_delay * (2 ** attempt)  # Exponential backoff
+                    if "retry_after" in error_str.lower():
+                        # Try to parse retry_after from JSON in error message
+                        try:
+                            # Look for JSON in the error message (handle nested JSON)
+                            json_match = re.search(r'\{.*"retry_after".*\}', error_str, re.DOTALL)
+                            if json_match:
+                                error_data = json.loads(json_match.group())
+                                if 'retry_after' in error_data:
+                                    retry_after = float(error_data['retry_after']) + 1
+                        except:
+                            pass
+                    
+                    if attempt < max_retries - 1:
+                        error_type = "Rate limited" if is_rate_limit else "Server error"
+                        print(f"{error_type}, retrying in {retry_after:.1f}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(retry_after)
+                        continue
+                    else:
+                        error_type = "Rate limit" if is_rate_limit else "Server error"
+                        print(f"{error_type} after {max_retries} attempts")
+                        raise
+                else:
+                    # Not a rate limit error, re-raise immediately
+                    raise
 
     def _market_existed_at_time(self, market, at_time: int) -> bool:
         return market.start_time <= at_time
@@ -403,7 +489,9 @@ class KalshiAPI:
             
             # Check pagination
             if hasattr(response, 'pagination') and response.pagination:
-                if not response.pagination.get('has_more', False):
+                # Pagination is an object, not a dict - access has_more as attribute
+                has_more = getattr(response.pagination, 'has_more', False)
+                if not has_more:
                     break
                 offset += len(response.markets)
             else:

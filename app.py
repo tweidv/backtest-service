@@ -139,6 +139,7 @@ async def run_backtest(request: Request):
             )
         
         # Create backtest client
+        print(f"DEBUG: Creating backtest client (start: {start_time}, end: {end_time}, cash: {initial_cash})")
         dome = DomeBacktestClient({
             "api_key": api_key,
             "start_time": start_time,
@@ -148,7 +149,14 @@ async def run_backtest(request: Request):
         })
         
         # Run the backtest
-        result = await dome.run(strategy_func)
+        print("DEBUG: Starting backtest execution...")
+        try:
+            result = await dome.run(strategy_func)
+            print(f"DEBUG: Backtest completed successfully. Trades: {len(result.trades)}, Final value: {result.final_value}")
+        except Exception as e:
+            print(f"DEBUG: Backtest execution error: {e}")
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
+            raise
         
         # Format results for JSON response
         trades_data = []
