@@ -28,4 +28,34 @@ class PolymarketNamespace:
         self.wallet = PolymarketWalletNamespace(real_client, clock, portfolio, rate_limit)
         self.activity = PolymarketActivityNamespace(real_client, clock, portfolio, rate_limit)
         # Note: websocket not implemented yet (would be for real-time, not backtesting)
+        
+        # Store references for convenience methods
+        self._portfolio = portfolio
+        self._clock = clock
+    
+    def buy(self, token_id: str, quantity, price, order_type: str = "taker", market_type: str = "global"):
+        """Convenience method to buy tokens directly."""
+        from decimal import Decimal
+        self._portfolio.buy(
+            platform="polymarket",
+            token_id=token_id,
+            quantity=Decimal(str(quantity)),
+            price=Decimal(str(price)),
+            timestamp=self._clock.current_time,
+            order_type=order_type,
+            market_type=market_type
+        )
+    
+    def sell(self, token_id: str, quantity, price, order_type: str = "taker", market_type: str = "global"):
+        """Convenience method to sell tokens directly."""
+        from decimal import Decimal
+        self._portfolio.sell(
+            platform="polymarket",
+            token_id=token_id,
+            quantity=Decimal(str(quantity)),
+            price=Decimal(str(price)),
+            timestamp=self._clock.current_time,
+            order_type=order_type,
+            market_type=market_type
+        )
 

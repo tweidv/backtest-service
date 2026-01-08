@@ -48,9 +48,19 @@ class DomeBacktestClient:
             self.step = config.get("step", 3600)
             self.initial_cash = Decimal(str(config.get("initial_cash", config.get("initialCash", 10000))))
             
+            # Fee and interest configuration
+            self.enable_fees = config.get("enable_fees", True)
+            self.enable_interest = config.get("enable_interest", False)  # Kalshi only
+            self.interest_apy = Decimal(str(config.get("interest_apy", "0.04")))  # 4% APY default
+            
             # Create internal components
             self._clock = SimulationClock(self.start_time)
-            self._portfolio = Portfolio(self.initial_cash)
+            self._portfolio = Portfolio(
+                self.initial_cash,
+                enable_fees=self.enable_fees,
+                enable_interest=self.enable_interest,
+                interest_apy=self.interest_apy
+            )
         else:
             # Old style: api_key, clock, portfolio (for backward compatibility)
             if clock is None or portfolio is None:
@@ -109,7 +119,12 @@ class DomeBacktestClient:
         
         # Reset clock and portfolio for fresh run
         self._clock = SimulationClock(self.start_time)
-        self._portfolio = Portfolio(self.initial_cash)
+        self._portfolio = Portfolio(
+            self.initial_cash,
+            enable_fees=self.enable_fees,
+            enable_interest=self.enable_interest,
+            interest_apy=self.interest_apy
+        )
         self.portfolio = self._portfolio  # Update reference
         self.polymarket = PolymarketNamespace(self._real_client, self._clock, self._portfolio)
         self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio)
@@ -224,6 +239,25 @@ class DomeBacktestClient:
             # Record equity
             prices = await get_prices(self)
             value = self._portfolio.get_value(prices)
+            
+            # Calculate positions value for interest accrual
+            positions_value = sum(
+                qty * prices.get(token_id, Decimal(0))
+                for token_id, qty in self._portfolio.positions.items()
+            )
+            
+            # Accrue daily interest (Kalshi)
+            if self._portfolio.enable_interest and self._portfolio.interest_accrual:
+                daily_interest = self._portfolio.interest_accrual.accrue_interest(
+                    cash_balance=self._portfolio.cash,
+                    positions_value=positions_value,
+                    current_timestamp=self._clock.current_time
+                )
+                if daily_interest > 0:
+                    # Add interest to cash (paid monthly, but we accrue daily)
+                    # For backtesting, we can add it daily or track separately
+                    self._portfolio.cash += daily_interest
+            
             equity_curve.append((self._clock.current_time, value))
             
             # Advance time
@@ -233,9 +267,16 @@ class DomeBacktestClient:
         final_prices = await get_prices(self)
         final_value = self._portfolio.get_value(final_prices)
         
+        # Calculate total interest earned
+        total_interest = Decimal(0)
+        if self._portfolio.interest_accrual:
+            total_interest = self._portfolio.interest_accrual.total_interest_paid
+        
         return BacktestResult(
             initial_cash=self.initial_cash,
             final_value=final_value,
             equity_curve=equity_curve,
             trades=self._portfolio.trades,
+            total_fees_paid=self._portfolio.total_fees_paid,
+            total_interest_earned=total_interest,
         )

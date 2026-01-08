@@ -40,7 +40,8 @@ class BacktestRunner:
         from ..api.client import DomeBacktestClient
         
         clock = SimulationClock(self.start_time)
-        portfolio = Portfolio(self.initial_cash)
+        # BacktestRunner uses default fee/interest settings for backward compatibility
+        portfolio = Portfolio(self.initial_cash, enable_fees=True, enable_interest=False)
         dome = DomeBacktestClient(self.api_key, clock, portfolio)
         
         equity_curve = []
@@ -61,10 +62,18 @@ class BacktestRunner:
         final_prices = await get_prices(dome)
         final_value = portfolio.get_value(final_prices)
 
+        # Calculate totals
+        total_fees = getattr(portfolio, 'total_fees_paid', Decimal(0))
+        total_interest = Decimal(0)
+        if hasattr(portfolio, 'interest_accrual') and portfolio.interest_accrual:
+            total_interest = portfolio.interest_accrual.total_interest_paid
+        
         return BacktestResult(
             initial_cash=self.initial_cash,
             final_value=final_value,
             equity_curve=equity_curve,
             trades=portfolio.trades,
+            total_fees_paid=total_fees,
+            total_interest_earned=total_interest,
         )
 

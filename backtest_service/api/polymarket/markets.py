@@ -422,6 +422,10 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         if order_type == "MARKET":
             limit_price = None
         
+        # Determine market type for fee calculation (default to global)
+        # Users can specify market_type in params if needed, but for now default to global
+        market_type = "global"  # Default: no fees on global Polymarket
+        
         # Create and execute order
         simulated_order = await self._order_manager.create_order(
             token_id=token_id,
@@ -432,6 +436,7 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
             expiration_time_seconds=expiration_time_seconds,
             client_order_id=client_order_id,
             platform=self.platform,
+            market_type=market_type,
         )
         
         # Return response matching py-clob-client structure

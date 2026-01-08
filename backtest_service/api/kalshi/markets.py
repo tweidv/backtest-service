@@ -254,6 +254,7 @@ class KalshiMarketsNamespace(BasePlatformAPI):
         order_side = side.upper()
         
         # Create and execute order
+        # Kalshi doesn't have market types like Polymarket, so use "global"
         simulated_order = await self._order_manager.create_order(
             token_id=ticker,
             side=order_side,
@@ -263,6 +264,7 @@ class KalshiMarketsNamespace(BasePlatformAPI):
             expiration_time_seconds=None,
             client_order_id=client_order_id,
             platform=self.platform,
+            market_type="global",  # Not applicable for Kalshi
         )
         
         # Return response matching kalshi SDK structure

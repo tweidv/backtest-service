@@ -25,4 +25,38 @@ class KalshiNamespace:
         self.markets = KalshiMarketsNamespace(real_client, clock, portfolio, rate_limit)
         self.orderbooks = KalshiOrderbooksNamespace(real_client, clock, portfolio, rate_limit)
         self.trades = KalshiTradesNamespace(real_client, clock, portfolio, rate_limit)
+        
+        # Store references for convenience methods
+        self._portfolio = portfolio
+        self._clock = clock
+    
+    def buy(self, ticker: str, quantity, price, side: str = "YES"):
+        """Convenience method to buy Kalshi contracts directly."""
+        from decimal import Decimal
+        # For Kalshi, use composite key with side
+        position_key = f"{ticker}:{side.upper()}"
+        self._portfolio.buy(
+            platform="kalshi",
+            token_id=position_key,
+            quantity=Decimal(str(quantity)),
+            price=Decimal(str(price)),
+            timestamp=self._clock.current_time,
+            order_type="taker",  # Default to taker
+            market_type="global"  # Not applicable for Kalshi
+        )
+    
+    def sell(self, ticker: str, quantity, price, side: str = "YES"):
+        """Convenience method to sell Kalshi contracts directly."""
+        from decimal import Decimal
+        # For Kalshi, use composite key with side
+        position_key = f"{ticker}:{side.upper()}"
+        self._portfolio.sell(
+            platform="kalshi",
+            token_id=position_key,
+            quantity=Decimal(str(quantity)),
+            price=Decimal(str(price)),
+            timestamp=self._clock.current_time,
+            order_type="taker",  # Default to taker
+            market_type="global"  # Not applicable for Kalshi
+        )
 

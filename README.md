@@ -58,6 +58,8 @@ print(f"Return: {result.total_return_pct:.2f}%")
 - **Mock Trading (Dome)** — Optional `create_order()` methods in Dome client for simulation (Dome itself is read-only)
 - **Realistic Order Types** — Market, Limit, FOK, GTC, GTD orders with orderbook matching
 - **Portfolio Simulation** — Track positions, cash, and P&L without real trades
+- **Transaction Fees** — Realistic fee calculation for Polymarket and Kalshi (enabled by default)
+- **Interest Accrual** — Kalshi APY interest on cash and positions (optional)
 - **Drop-in Replacement** — Same API interface as the real SDKs
 
 ## Known Limitations
@@ -228,6 +230,9 @@ dome = DomeBacktestClient({
     "end_time": 1729886400,    # Unix timestamp
     "step": 3600,              # Optional: seconds between ticks (default 3600)
     "initial_cash": 10000,     # Optional: starting capital (default 10000)
+    "enable_fees": True,       # Optional: enable transaction fees (default: True)
+    "enable_interest": False,  # Optional: enable Kalshi interest accrual (default: False)
+    "interest_apy": 0.04,      # Optional: Kalshi APY rate (default: 0.04 = 4%)
 })
 
 # Run backtest
@@ -268,11 +273,99 @@ await dome.kalshi.markets.create_order(...)  # Mock method
 ### BacktestResult
 
 ```python
-result.initial_cash      # Decimal
-result.final_value       # Decimal
-result.total_return_pct  # float (percentage)
-result.trades            # List[Trade]
-result.equity_curve      # List[(timestamp, value)]
+result.initial_cash              # Decimal
+result.final_value               # Decimal
+result.total_return_pct          # float (percentage)
+result.trades                    # List[Trade] - each Trade has a 'fee' field
+result.equity_curve              # List[(timestamp, value)]
+result.total_fees_paid           # Decimal - total fees paid
+result.total_interest_earned     # Decimal - total interest earned (Kalshi)
+
+# Net returns after fees
+result.net_return_after_fees     # Decimal - return after fees (includes interest)
+result.net_return_after_fees_pct # float - percentage after fees
+
+# Access fee information from portfolio
+portfolio.total_fees_paid  # Total fees paid during backtest
+if portfolio.interest_accrual:
+    portfolio.interest_accrual.total_interest_paid  # Total interest earned (Kalshi)
+```
+
+## Transaction Fees
+
+Transaction fees are **enabled by default** to provide realistic backtest results. Fees are automatically calculated and applied based on the platform and order type.
+
+### Maker vs Taker Orders
+
+Fees depend on whether your order is a **maker** (provides liquidity) or **taker** (takes liquidity):
+
+- **Market orders**: Always takers (take liquidity immediately)
+- **Limit orders that fill immediately**: Takers (cross the spread)
+- **Limit orders that rest on book**: Makers (provide liquidity when filled later)
+
+The system automatically detects this based on order execution:
+- If a limit order fills immediately → taker fee
+- If a limit order goes to pending and fills later → maker fee/rebate
+
+### Polymarket Fees
+- **Global Platform**: No fees (makers and takers)
+- **US Market (QCEX)**: 0.01% taker fee (makers: no fee)
+- **15-minute Crypto Markets**: Taker fees with maker rebates
+
+### Kalshi Fees
+Kalshi uses a dynamic fee structure based on contract price and probability:
+
+**Formula**: `fees = round_up(0.07 × C × P × (1 - P))`
+- `C` = number of contracts
+- `P` = contract price in dollars (0.5 for 50 cents)
+
+**Examples**:
+- 100 contracts @ $0.50: fee ≈ $1.75
+- Higher fees for extreme probabilities (near $0.01 or $0.99)
+- Lower fees for 50/50 contracts (near $0.50)
+
+**Disable fees** (for comparison):
+```python
+dome = DomeBacktestClient({
+    "api_key": "...",
+    "start_time": ...,
+    "end_time": ...,
+    "enable_fees": False,  # Disable fees
+})
+```
+
+## Kalshi Interest (APY)
+
+Kalshi offers interest on cash balances and open positions. Interest accrues daily and is paid monthly.
+
+**Current Rate**: 4.00% APY (variable, subject to change)
+
+**Eligibility**:
+- Minimum balance of $250
+- Account funded through Kalshi Klear
+
+**Enable interest**:
+```python
+dome = DomeBacktestClient({
+    "api_key": "...",
+    "start_time": ...,
+    "end_time": ...,
+    "enable_interest": True,   # Enable interest accrual
+    "interest_apy": 0.04,      # 4% APY (default)
+})
+```
+
+Interest accrues daily on:
+- Cash balances
+- End-of-day value of open positions (net portfolio value)
+
+Access interest information:
+```python
+# After running backtest
+portfolio = dome.portfolio
+if portfolio.interest_accrual:
+    print(f"Total interest earned: ${portfolio.interest_accrual.total_interest_paid:.2f}")
+    print(f"Accrued interest: ${portfolio.interest_accrual.accrued_interest:.2f}")
 ```
 
 ## Environment Variables
@@ -288,6 +381,28 @@ export DOME_API_KEY=your-api-key
 ## Rate Limiting
 
 The service includes built-in rate limiting (1.1s between API calls) to comply with Dome API's free tier limits.
+
+## Fee and Interest Summary
+
+**Transaction Fees** (enabled by default):
+- **Polymarket Global**: Free
+- **Polymarket US**: 0.01% taker fee
+- **Kalshi**: Dynamic fees based on contract price (formula: `0.07 × C × P × (1 - P)`)
+
+**Kalshi Interest** (optional, disabled by default):
+- **Rate**: 4.00% APY (variable)
+- **Accrues**: Daily on cash + positions value
+- **Paid**: Monthly (simulated as daily accrual in backtests)
+- **Minimum**: $250 balance required
+
+**Example with fees and interest**:
+```python
+result = await dome.run(my_strategy)
+print(f"Gross return: {result.total_return_pct:.2f}%")
+print(f"Fees paid: ${result.total_fees_paid:.2f}")
+print(f"Interest earned: ${result.total_interest_earned:.2f}")
+print(f"Net return: {result.net_return_after_fees_pct:.2f}%")
+```
 
 ## Alternatives
 

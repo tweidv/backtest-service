@@ -31,6 +31,9 @@ class SimulatedOrder:
     created_time: int
     expiration_time: Optional[int]
     client_order_id: Optional[str] = None
+    platform: str = "polymarket"  # Track platform for fee calculation
+    market_type: str = "global"  # For Polymarket: "global", "us", "crypto_15min"
+    was_pending: bool = False  # True if order rested on book (maker), False if filled immediately (taker)
     
     def to_dict(self) -> dict:
         """Convert to dictionary matching real API response structure."""
@@ -75,6 +78,7 @@ class OrderManager:
         expiration_time_seconds: Optional[int] = None,
         client_order_id: Optional[str] = None,
         platform: str = "polymarket",
+        market_type: str = "global",  # For Polymarket fee calculation
     ) -> SimulatedOrder:
         """
         Create and attempt to execute an order.
@@ -93,6 +97,11 @@ class OrderManager:
         if order_type == "GTD" and expiration_time_seconds is None:
             raise ValueError("expiration_time_seconds is required for GTD orders")
         
+        # Determine if this is a maker or taker order
+        # Maker = limit order that doesn't fill immediately (rests on book)
+        # Taker = market order or limit order that fills immediately
+        # We'll determine this after trying to fill
+        
         # Create order object
         order = SimulatedOrder(
             order_id=order_id,
@@ -107,16 +116,23 @@ class OrderManager:
             created_time=self._clock.current_time,
             expiration_time=expiration_time_seconds,
             client_order_id=client_order_id,
+            platform=platform,
+            market_type=market_type,
         )
         
         # Attempt to fill immediately
         result = await self._try_fill_order(order, platform)
         
         # If not filled and is a limit order that can persist, add to pending
+        # This means it will be a maker order (provides liquidity)
         if (result.status == OrderStatus.PENDING and 
             order_type in ["GTC", "GTD"] and 
             limit_price is not None):
+            result.was_pending = True  # Mark as maker order
             self._pending_orders.append(result)
+        else:
+            # Filled immediately = taker order (takes liquidity)
+            result.was_pending = False
         
         return result
     
@@ -158,9 +174,12 @@ class OrderManager:
         elif order.order_type in ["GTC", "GTD"]:
             # Good-Till-Cancel/Date: fill if marketable, otherwise queue
             if can_fill:
+                # Fills immediately = taker order (takes liquidity)
+                # was_pending is already False (default)
                 return await self._execute_fill(order, order.size, order.limit_price, platform)
             else:
-                # Not marketable - keep pending
+                # Not marketable - will rest on book = maker order (provides liquidity)
+                # was_pending will be set to True when added to pending_orders
                 order.status = OrderStatus.PENDING
                 return order
         
@@ -189,6 +208,17 @@ class OrderManager:
         else:
             position_key = order.token_id
         
+        # Determine if this is a maker or taker order for fee calculation
+        # - Maker = limit order that rested on book (was pending) and now gets filled
+        # - Taker = market order OR limit order that filled immediately (crossed spread)
+        # Market orders are always takers
+        if order.order_type == "MARKET" or order.limit_price is None:
+            order_type_for_fees = "taker"  # Market orders always take liquidity
+        elif order.was_pending:
+            order_type_for_fees = "maker"  # Was pending = provided liquidity
+        else:
+            order_type_for_fees = "taker"  # Filled immediately = took liquidity
+        
         try:
             if is_buy:
                 # Buying: reduce cash, increase position
@@ -198,6 +228,8 @@ class OrderManager:
                     quantity=fill_size,
                     price=fill_price,
                     timestamp=self._clock.current_time,
+                    order_type=order_type_for_fees,
+                    market_type=order.market_type,
                 )
             else:
                 # Selling: increase cash, decrease position
@@ -207,6 +239,8 @@ class OrderManager:
                     quantity=fill_size,
                     price=fill_price,
                     timestamp=self._clock.current_time,
+                    order_type=order_type_for_fees,
+                    market_type=order.market_type,
                 )
             
             # Update order
