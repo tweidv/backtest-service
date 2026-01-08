@@ -8,8 +8,8 @@ from .models import (
     HistoricalKalshiMarketsResponse,
 )
 from .base_api import BasePlatformAPI
-from .polymarket_namespaces import PolymarketNamespace
-from .kalshi_namespaces import KalshiNamespace
+from .polymarket import PolymarketNamespace
+from .kalshi import KalshiNamespace
 
 __all__ = [
     'DomeBacktestClient',

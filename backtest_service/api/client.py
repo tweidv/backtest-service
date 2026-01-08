@@ -7,8 +7,8 @@ from dome_api_sdk import DomeClient
 
 from ..simulation.clock import SimulationClock
 from ..simulation.portfolio import Portfolio
-from .polymarket_namespaces import PolymarketNamespace
-from .kalshi_namespaces import KalshiNamespace
+from .polymarket import PolymarketNamespace
+from .kalshi import KalshiNamespace
 
 
 class DomeBacktestClient:

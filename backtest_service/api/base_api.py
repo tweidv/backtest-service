@@ -1,4 +1,11 @@
-"""Base API class with shared functionality for platform APIs."""
+"""Base API class with shared functionality for platform APIs.
+
+This module provides the BasePlatformAPI class that all platform-specific
+API namespaces inherit from. It includes:
+- Rate-limited API calling with retry logic
+- Historical time filtering helpers
+- Market existence/status checking
+"""
 
 import asyncio
 import inspect
