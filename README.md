@@ -150,9 +150,9 @@ See [docs/UX_FEATURES.md](docs/UX_FEATURES.md) for more details.
 
 ## Trading
 
-### Using DomeBacktestClient (Simple Trading)
+### Simple Buy/Sell
 
-For simple buy/sell operations:
+For simple buy/sell operations (convenience methods):
 
 ```python
 async def strategy(dome):
@@ -160,14 +160,14 @@ async def strategy(dome):
         "token_id": "0x123..."
     })
     
-    # Buy tokens
+    # Buy tokens (convenience method)
     dome.polymarket.buy(
         token_id="0x123...",
         quantity=100,
         price=price_data.price
     )
     
-    # Sell tokens
+    # Sell tokens (convenience method)
     dome.polymarket.sell(
         token_id="0x123...",
         quantity=50,
@@ -175,31 +175,68 @@ async def strategy(dome):
     )
 ```
 
-### Using Native SDK Clients (Advanced Orders)
+### Advanced Orders (Dome API Compatible)
 
-For advanced order types (limit, market, GTC, GTD):
+For full control with order types matching Dome API:
 
 ```python
-from backtest_service.native import PolymarketBacktestClient
-
-client = PolymarketBacktestClient({
-    "dome_api_key": "your-key",
-    "start_time": ...,
-    "end_time": ...,
-    "initial_cash": 10000,
-})
-
-# Create limit order
-order = await client.create_order(
-    token_id="0x123...",
-    side="YES",
-    size="1000000000",  # Base units (1e18)
-    price="0.65",
-    order_type="GTC"
-)
+async def strategy(dome):
+    # Create order using Dome API format
+    order = await dome.polymarket.markets.create_order(
+        token_id="0x123...",
+        side="buy",        # "buy" or "sell" (Dome API format)
+        size="1000000000", # Order size as string
+        price="0.65",      # Limit price as string (0-1)
+        order_type="GTC"   # "FOK", "FAK", "GTC", or "GTD"
+    )
+    
+    if order["status"] == "matched":
+        print(f"Order filled at {order['fill_price']}")
 ```
 
-See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for full examples.
+### Using Advanced Order Types
+
+Create orders with various types matching Dome API:
+
+```python
+async def strategy(dome):
+    # Get market price
+    price_data = await dome.polymarket.markets.get_market_price({
+        "token_id": "0x123..."
+    })
+    
+    # Create limit order (GTC - Good Till Cancel)
+    order = await dome.polymarket.markets.create_order(
+        token_id="0x123...",
+        side="buy",           # "buy" or "sell"
+        size="1000000000",    # Order size in base units
+        price="0.65",         # Limit price (0-1)
+        order_type="GTC"      # Order type
+    )
+    
+    # Check order status
+    if order["status"] == "matched":
+        print("Order filled!")
+    
+    # Order types:
+    # - "FOK" - Fill Or Kill (must fill completely or reject)
+    # - "FAK" - Fill And Kill (fill what you can, cancel rest)
+    # - "GTC" - Good Till Cancel (stays on book until filled)
+    # - "GTD" - Good Till Date (expires at specified time)
+```
+
+**Order Types:**
+- **FOK** (Fill Or Kill): Order must fill completely or be rejected immediately
+- **FAK** (Fill And Kill): Fill what you can at limit price, cancel remainder
+- **GTC** (Good Till Cancel): Order stays on book until filled or cancelled
+- **GTD** (Good Till Date): Order expires at specified `expiration_time_seconds`
+
+**Order Status:**
+- `"matched"` - Order was filled
+- `"pending"` - Order is on the book waiting to fill
+- `"rejected"` - Order was rejected (e.g., insufficient liquidity)
+- `"cancelled"` - Order was cancelled
+- `"expired"` - Order expired (GTD orders)
 
 ## Market Discovery
 
@@ -311,6 +348,13 @@ await dome.polymarket.markets.get_markets(params)
 await dome.polymarket.markets.get_market_price(params)
 await dome.polymarket.markets.get_candlesticks(params)
 await dome.polymarket.markets.get_orderbooks(params)
+await dome.polymarket.markets.create_order({
+    "token_id": "...",
+    "side": "buy",           # "buy" or "sell"
+    "size": "1000000000",
+    "price": "0.65",
+    "order_type": "GTC"      # "FOK", "FAK", "GTC", "GTD"
+})
 
 # Kalshi API
 await dome.kalshi.markets.get_markets(params)

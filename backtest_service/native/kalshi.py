@@ -160,13 +160,21 @@ class KalshiBacktestClient:
             else:
                 limit_price = None
             
+            # Map kalshi order types to Dome API format
+            # kalshi uses "market", Dome uses "FOK"
+            mapped_order_type = "FOK" if order_type == "market" else "GTC"
+            
+            # Normalize side - kalshi uses yes/no, which normalize_side accepts
+            from ..simulation.orders import normalize_side
+            normalized_side = normalize_side(side)
+            
             # Simulate order
             simulated_order = await self._order_manager.create_order(
                 token_id=ticker,
-                side=side.upper(),
+                side=normalized_side,  # Use normalized side
                 size=Decimal(count),
                 limit_price=limit_price,
-                order_type="MARKET" if order_type == "market" else "GTC",
+                order_type=mapped_order_type,  # Use mapped order type
                 expiration_time_seconds=None,
                 client_order_id=client_order_id,
                 platform="kalshi",
@@ -175,17 +183,21 @@ class KalshiBacktestClient:
             # Return response matching kalshi SDK structure
             fill_price_cents = int(simulated_order.fill_price * 100) if simulated_order.fill_price else None
             
+            # Kalshi SDK expects status in their format - keep original status mapping
+            status = simulated_order.status.value
+            # Kalshi SDK might expect different status format, but we'll use our standard
+            
             return {
                 "order_id": simulated_order.order_id,
                 "client_order_id": simulated_order.client_order_id,
                 "ticker": simulated_order.token_id,
-                "side": simulated_order.side.lower(),
+                "side": side.lower(),  # Return as yes/no (kalshi format)
                 "action": action.lower(),
                 "count": int(simulated_order.size),
-                "type": order_type,
+                "type": order_type,  # Return original order_type (limit/market)
                 "yes_price": yes_price,
                 "no_price": no_price,
-                "status": simulated_order.status.value,
+                "status": status,  # Keep status as-is (kalshi SDK format)
                 "filled_count": int(simulated_order.filled_size),
                 "fill_price": fill_price_cents,
                 "created_time": simulated_order.created_time,

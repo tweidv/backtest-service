@@ -255,12 +255,15 @@ class KalshiMarketsNamespace(BasePlatformAPI):
         
         # Create and execute order
         # Kalshi doesn't have market types like Polymarket, so use "global"
+        # Map "market" to "FOK" (Dome API format)
+        mapped_order_type = "FOK" if order_type == "market" else "GTC"
+        
         simulated_order = await self._order_manager.create_order(
             token_id=ticker,
             side=order_side,
             size=Decimal(count),
             limit_price=limit_price,
-            order_type="MARKET" if order_type == "market" else "GTC",
+            order_type=mapped_order_type,
             expiration_time_seconds=None,
             client_order_id=client_order_id,
             platform=self.platform,

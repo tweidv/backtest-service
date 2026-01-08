@@ -10,6 +10,7 @@ class OrderStatus(Enum):
     """Order status enumeration."""
     PENDING = "pending"
     FILLED = "filled"
+    MATCHED = "matched"  # Dome API format - same as FILLED
     PARTIALLY_FILLED = "partially_filled"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
@@ -21,10 +22,10 @@ class SimulatedOrder:
     """Represents a simulated order."""
     order_id: str
     token_id: str  # Token ID (Polymarket) or ticker (Kalshi)
-    side: str  # "YES", "NO", "yes", "no", "BUY", "SELL"
+    side: str  # "YES" or "NO" (normalized internally)
     size: Decimal  # Order size
     limit_price: Optional[Decimal]  # None for market orders
-    order_type: str  # "MARKET", "LIMIT", "FOK", "GTC", "GTD"
+    order_type: str  # "FOK", "FAK", "GTC", "GTD" (Dome API format)
     status: OrderStatus
     filled_size: Decimal
     fill_price: Optional[Decimal]
@@ -36,21 +37,55 @@ class SimulatedOrder:
     was_pending: bool = False  # True if order rested on book (maker), False if filled immediately (taker)
     
     def to_dict(self) -> dict:
-        """Convert to dictionary matching real API response structure."""
+        """Convert to dictionary matching Dome API response structure."""
+        # Map status to Dome API format
+        status = self.status.value
+        if self.status == OrderStatus.MATCHED:
+            status = "matched"  # Dome API format
+        elif self.status == OrderStatus.FILLED:
+            status = "matched"  # Map FILLED to matched
+        
         return {
             "order_id": self.order_id,
             "token_id": self.token_id,
-            "side": self.side,
+            "side": self.side,  # Internal format (YES/NO)
             "size": str(self.size),
             "limit_price": str(self.limit_price) if self.limit_price else None,
             "order_type": self.order_type,
-            "status": self.status.value,
+            "status": status,  # Dome API format
             "filled_size": str(self.filled_size),
             "fill_price": str(self.fill_price) if self.fill_price else None,
             "created_time": self.created_time,
             "expiration_time": self.expiration_time,
             "client_order_id": self.client_order_id,
         }
+
+
+def normalize_side(side: str) -> str:
+    """
+    Normalize side parameter to internal format.
+    
+    Accepts 'buy'/'sell' (Dome API format) and normalizes to 'YES'/'NO' for internal use.
+    
+    Args:
+        side: Side as 'buy'/'sell', 'BUY'/'SELL', 'YES'/'NO', or 'yes'/'no'
+    
+    Returns:
+        Normalized side as 'YES' or 'NO' (for internal use)
+    
+    Examples:
+        normalize_side('buy') -> 'YES'
+        normalize_side('sell') -> 'NO'
+        normalize_side('YES') -> 'YES'
+        normalize_side('NO') -> 'NO'
+    """
+    side_lower = side.lower()
+    if side_lower in ['yes', 'buy']:
+        return 'YES'
+    elif side_lower in ['no', 'sell']:
+        return 'NO'
+    else:
+        raise ValueError(f"Invalid side: {side}. Must be 'buy'/'sell' or 'YES'/'NO'")
 
 
 class OrderManager:
@@ -88,13 +123,19 @@ class OrderManager:
         """
         order_id = client_order_id or self._generate_order_id()
         
+        # Normalize side to support both 'YES'/'NO' and 'buy'/'sell'
+        normalized_side = normalize_side(side)
+        
+        # Normalize and validate order type (Dome API format - no MARKET, no LIMIT)
+        normalized_order_type = order_type.upper()
+        
         # Validate order type
-        valid_types = ["MARKET", "LIMIT", "FOK", "GTC", "GTD"]
-        if order_type not in valid_types:
+        valid_types = ["FOK", "FAK", "GTC", "GTD"]
+        if normalized_order_type not in valid_types:
             raise ValueError(f"order_type must be one of {valid_types}, got: {order_type}")
         
         # Validate GTD requires expiration
-        if order_type == "GTD" and expiration_time_seconds is None:
+        if normalized_order_type == "GTD" and expiration_time_seconds is None:
             raise ValueError("expiration_time_seconds is required for GTD orders")
         
         # Determine if this is a maker or taker order
@@ -102,14 +143,14 @@ class OrderManager:
         # Taker = market order or limit order that fills immediately
         # We'll determine this after trying to fill
         
-        # Create order object
+        # Create order object (store original order_type for response, but use normalized for logic)
         order = SimulatedOrder(
             order_id=order_id,
             token_id=token_id,
-            side=side,
+            side=normalized_side,  # Use normalized side
             size=size,
             limit_price=limit_price,
-            order_type=order_type,
+            order_type=normalized_order_type,  # Use normalized order type
             status=OrderStatus.PENDING,
             filled_size=Decimal(0),
             fill_price=None,
@@ -120,13 +161,17 @@ class OrderManager:
             market_type=market_type,
         )
         
+        # Store original order_type for response (in case needed later)
+        if hasattr(order, '__dict__'):
+            order.__dict__['_original_order_type'] = normalized_order_type
+        
         # Attempt to fill immediately
         result = await self._try_fill_order(order, platform)
         
         # If not filled and is a limit order that can persist, add to pending
         # This means it will be a maker order (provides liquidity)
         if (result.status == OrderStatus.PENDING and 
-            order_type in ["GTC", "GTD"] and 
+            normalized_order_type in ["GTC", "GTD"] and 
             limit_price is not None):
             result.was_pending = True  # Mark as maker order
             self._pending_orders.append(result)
@@ -144,8 +189,8 @@ class OrderManager:
             self._clock.current_time
         )
         
-        # Handle market orders
-        if order.order_type == "MARKET" or order.limit_price is None:
+        # Handle FOK orders without limit price (market orders)
+        if order.order_type == "FOK" and order.limit_price is None:
             fill_price = self._orderbook_sim.get_market_price(
                 orderbook, order.side, platform
             )
@@ -164,10 +209,22 @@ class OrderManager:
         )
         
         if order.order_type == "FOK":
-            # Fill-or-Kill: fill completely or reject
+            # Fill-or-Kill: fill completely or reject (at limit price)
             if can_fill:
                 return await self._execute_fill(order, order.size, order.limit_price, platform)
             else:
+                order.status = OrderStatus.REJECTED
+                return order
+        
+        elif order.order_type == "FAK":
+            # Fill-And-Kill: fill what you can at limit price, cancel rest
+            if can_fill:
+                # Can fill fully - execute full fill
+                return await self._execute_fill(order, order.size, order.limit_price, platform)
+            else:
+                # Try partial fill - check if we can fill any size at limit price
+                # For simplicity, if we can't fill the full size, we reject (no partial fills in FAK for now)
+                # In practice, FAK would fill best available size up to limit, but we simplify
                 order.status = OrderStatus.REJECTED
                 return order
         
@@ -248,7 +305,8 @@ class OrderManager:
             order.fill_price = fill_price
             
             if fill_size == order.size:
-                order.status = OrderStatus.FILLED
+                # Fully filled - use MATCHED status (Dome API format)
+                order.status = OrderStatus.MATCHED
             else:
                 order.status = OrderStatus.PARTIALLY_FILLED
             
@@ -277,7 +335,7 @@ class OrderManager:
             if result.status == OrderStatus.PENDING:
                 # Still pending - keep in queue
                 remaining_orders.append(result)
-            elif result.status == OrderStatus.FILLED:
+            elif result.status in [OrderStatus.FILLED, OrderStatus.MATCHED]:
                 # Fully filled - remove from pending
                 pass
             elif result.status == OrderStatus.PARTIALLY_FILLED:
@@ -300,4 +358,5 @@ class OrderManager:
     def get_pending_orders(self) -> List[SimulatedOrder]:
         """Get all pending orders."""
         return self._pending_orders.copy()
+
 

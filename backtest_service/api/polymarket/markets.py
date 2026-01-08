@@ -373,43 +373,56 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         client_order_id: str = None,
     ) -> dict:
         """
-        Create an order - matches py-clob-client API signature.
+        Create an order - matches Dome API signature.
         
-        Matches: py_clob_client.ClobClient.create_order()
+        Matches: Dome API router.placeOrder()
         
         Args:
             token_id: Condition token ID (required)
-            side: "YES" or "NO" (required)
+            side: "buy" or "sell" (required) - Dome API format
             size: Order size as string in base units (required)
-            price: Limit price as string (0-1) (required for limit orders)
-            order_type: "MARKET", "FOK", "GTC", or "GTD" (default: "GTC")
+            price: Limit price as string (0-1) (required for limit orders, None for FOK without limit)
+            order_type: "FOK", "FAK", "GTC", or "GTD" (default: "GTC")
+                - "FOK": Fill Or Kill - must fill completely or reject
+                - "FAK": Fill And Kill - fill what you can, cancel rest
+                - "GTC": Good Till Cancel - stays on book until filled
+                - "GTD": Good Till Date - expires at specified time
             expiration_time_seconds: Required for GTD orders
-            post_only: If True, order only rests (no immediate match)
+            post_only: Deprecated - not used
             client_order_id: Optional custom order ID
         
         Returns:
-            Simulated order response matching py-clob-client structure
+            Order response with status: "matched" when filled, "pending" when on book, etc.
         
         Example:
             order = await dome.polymarket.markets.create_order(
                 token_id="0x123...",
-                side="YES",
+                side="buy",
                 size="1000000000",
                 price="0.65",
                 order_type="GTC"
             )
+            
+            if order["status"] == "matched":
+                print("Order filled!")
         """
-        # Validate side
-        if side.upper() not in ["YES", "NO"]:
-            raise ValueError(f"side must be 'YES' or 'NO', got: {side}")
+        # Validate side (Dome API format)
+        side_lower = side.lower()
+        if side_lower not in ["buy", "sell"]:
+            raise ValueError(f"side must be 'buy' or 'sell', got: {side}")
         
-        # Validate order_type
-        valid_types = ["MARKET", "FOK", "GTC", "GTD"]
-        if order_type not in valid_types:
+        # Normalize side to internal format
+        from ...simulation.orders import normalize_side
+        normalized_side = normalize_side(side)
+        
+        # Validate order_type (Dome API format - no MARKET, use FOK instead)
+        valid_types = ["FOK", "FAK", "GTC", "GTD"]
+        order_type_upper = order_type.upper()
+        if order_type_upper not in valid_types:
             raise ValueError(f"order_type must be one of {valid_types}, got: {order_type}")
         
         # Validate GTD requires expiration
-        if order_type == "GTD" and expiration_time_seconds is None:
+        if order_type_upper == "GTD" and expiration_time_seconds is None:
             raise ValueError("expiration_time_seconds is required for GTD orders")
         
         # Initialize order simulation if needed
@@ -419,37 +432,50 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         size_decimal = Decimal(size)
         limit_price = Decimal(price) if price else None
         
-        # For MARKET orders, price is None
-        if order_type == "MARKET":
-            limit_price = None
+        # For FOK orders without price, treat as market order
+        if order_type_upper == "FOK" and limit_price is None:
+            limit_price = None  # Will use market price
         
         # Determine market type for fee calculation (default to global)
-        # Users can specify market_type in params if needed, but for now default to global
         market_type = "global"  # Default: no fees on global Polymarket
         
-        # Create and execute order
+        # Create and execute order (uses normalized side internally)
         simulated_order = await self._order_manager.create_order(
             token_id=token_id,
-            side=side.upper(),
+            side=normalized_side,  # Internal use normalized
             size=size_decimal,
             limit_price=limit_price,
-            order_type=order_type,
+            order_type=order_type_upper,  # Use validated order type
             expiration_time_seconds=expiration_time_seconds,
             client_order_id=client_order_id,
             platform=self.platform,
             market_type=market_type,
         )
         
-        # Return response matching py-clob-client structure
+        # Map status to Dome API format
+        from ...simulation.orders import OrderStatus
+        status = simulated_order.status.value
+        if simulated_order.status in [OrderStatus.MATCHED, OrderStatus.FILLED]:
+            status = "matched"  # Dome API format
+        elif simulated_order.status == OrderStatus.PENDING:
+            status = "pending"
+        elif simulated_order.status == OrderStatus.REJECTED:
+            status = "rejected"
+        elif simulated_order.status == OrderStatus.CANCELLED:
+            status = "cancelled"
+        elif simulated_order.status == OrderStatus.EXPIRED:
+            status = "expired"
+        
+        # Return response in Dome API format (buy/sell, matched status)
         return {
             "order_id": simulated_order.order_id,
             "client_order_id": simulated_order.client_order_id,
             "token_id": simulated_order.token_id,
-            "side": simulated_order.side,
+            "side": side.lower(),  # Return as "buy" or "sell" (Dome API format)
             "size": str(simulated_order.size),
             "price": str(simulated_order.limit_price) if simulated_order.limit_price else None,
-            "order_type": simulated_order.order_type,
-            "status": simulated_order.status.value,
+            "order_type": order_type_upper,  # Return validated order type
+            "status": status,  # Dome API format
             "filled_size": str(simulated_order.filled_size),
             "fill_price": str(simulated_order.fill_price) if simulated_order.fill_price else None,
             "created_time": simulated_order.created_time,

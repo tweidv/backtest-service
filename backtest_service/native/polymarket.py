@@ -123,10 +123,11 @@ class PolymarketBacktestClient:
         
         Args:
             token_id: Condition token ID (required)
-            side: "YES" or "NO" (required)
+            side: "YES" or "NO" (required) - py-clob-client format
             size: Order size as string in base units (required)
-            price: Limit price as string (0-1) (required for limit orders)
+            price: Limit price as string (0-1) (required for limit orders, None for MARKET)
             order_type: "MARKET", "FOK", "GTC", or "GTD" (default: "GTC")
+                - "MARKET" is mapped to "FOK" internally (Dome API format)
             expiration_time_seconds: Required for GTD orders
             post_only: If True, order only rests (no immediate match)
             client_order_id: Optional custom order ID
@@ -144,28 +145,44 @@ class PolymarketBacktestClient:
             )
         """
         if self.mode == "backtest":
+            # Map py-clob-client order types to Dome API format
+            # py-clob-client uses "MARKET", Dome uses "FOK"
+            mapped_order_type = "FOK" if order_type.upper() == "MARKET" else order_type.upper()
+            
+            # Normalize side - py-clob-client uses YES/NO, which normalize_side accepts
+            from ..simulation.orders import normalize_side
+            normalized_side = normalize_side(side)
+            
             # Simulate order
             simulated_order = await self._order_manager.create_order(
                 token_id=token_id,
-                side=side.upper(),
+                side=normalized_side,  # Use normalized side
                 size=Decimal(size),
                 limit_price=Decimal(price) if price else None,
-                order_type=order_type,
+                order_type=mapped_order_type,  # Use mapped order type
                 expiration_time_seconds=expiration_time_seconds,
                 client_order_id=client_order_id,
                 platform="polymarket",
             )
             
             # Return response matching py-clob-client structure
+            # py-clob-client expects status as "filled", not "matched"
+            status = simulated_order.status.value
+            if status in ["matched", "filled"]:
+                status = "filled"  # py-clob-client format
+            
+            # Return original order_type for compatibility (MARKET stays as MARKET)
+            response_order_type = order_type if order_type.upper() == "MARKET" else simulated_order.order_type
+            
             return {
                 "order_id": simulated_order.order_id,
                 "client_order_id": simulated_order.client_order_id,
                 "token_id": simulated_order.token_id,
-                "side": simulated_order.side,
+                "side": side.upper(),  # Return as YES/NO (py-clob-client format)
                 "size": str(simulated_order.size),
                 "price": str(simulated_order.limit_price) if simulated_order.limit_price else None,
-                "order_type": simulated_order.order_type,
-                "status": simulated_order.status.value,
+                "order_type": response_order_type,  # Return original order_type
+                "status": status,  # py-clob-client format ("filled" not "matched")
                 "filled_size": str(simulated_order.filled_size),
                 "fill_price": str(simulated_order.fill_price) if simulated_order.fill_price else None,
                 "created_time": simulated_order.created_time,
