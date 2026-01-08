@@ -182,8 +182,9 @@ async def my_strategy():
 
 ### 2. Portfolio Tracking
 - Access to `dome.portfolio` for tracking positions and PnL
-- Use `dome.portfolio.buy()` and `dome.portfolio.sell()` for simulated trades
-- Dome API is read-only, so trading is simulated
+- Dome API is **read-only** (data only)
+- Mock `create_order()`, `buy()`, and `sell()` methods are included for simulation/forward compatibility
+- For actual trading, use `PolymarketBacktestClient` or `KalshiBacktestClient` with native SDKs
 
 ### 3. Time Control
 - Time advances automatically when using `dome.run(strategy)`
@@ -259,11 +260,20 @@ All API methods have been tested and verified to work with the same syntax:
 
 ---
 
-## Native SDK Support
+## Using Official Native SDKs (For Trading)
+
+**Dome is read-only** - it only provides data access. For actual order creation and trading, use the native SDK backtest clients as drop-in replacements for the official SDKs.
+
+### Important Note
+
+- **Dome** (`DomeBacktestClient`) is **read-only** - only for reading market data, prices, orderbooks, etc.
+- **Dome's `create_order()`, `buy()`, `sell()`** are **mock/simulation methods** included for completeness and forward compatibility (Dome itself doesn't support trading)
+- **Native SDK backtest clients** (`PolymarketBacktestClient`, `KalshiBacktestClient`) are for actual trading using the official SDKs
+- Use Dome for data, native SDK clients for trading
 
 ### Polymarket Native SDK (`py-clob-client`)
 
-**Drop-in replacement** for `py-clob-client`:
+**If your strategy uses `py-clob-client` directly:**
 
 **Live:**
 ```python
@@ -284,13 +294,13 @@ order = await client.create_order(
 from backtest_service.native import PolymarketBacktestClient
 
 client = PolymarketBacktestClient({
-    "dome_api_key": "...",
+    "dome_api_key": "...",  # Uses Dome for historical data
     "start_time": 1729800000,
     "end_time": 1729886400,
     "initial_cash": 10000,
 })
 
-# Same code! ✅
+# Same code! ✅ Just swap the import
 order = await client.create_order(
     token_id="0x123...",
     side="YES",
@@ -302,7 +312,7 @@ order = await client.create_order(
 
 ### Kalshi Native SDK (`kalshi`)
 
-**Drop-in replacement** for `kalshi` SDK:
+**If your strategy uses `kalshi` SDK directly:**
 
 **Live:**
 ```python
@@ -324,13 +334,13 @@ order = await client.create_order(
 from backtest_service.native import KalshiBacktestClient
 
 client = KalshiBacktestClient({
-    "dome_api_key": "...",
+    "dome_api_key": "...",  # Uses Dome for historical data
     "start_time": 1729800000,
     "end_time": 1729886400,
     "initial_cash": 10000,
 })
 
-# Same code! ✅
+# Same code! ✅ Just swap the import
 order = await client.create_order(
     ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
     side="yes",
@@ -356,13 +366,15 @@ Order matching uses historical orderbook data from Dome API to simulate realisti
 ## Summary
 
 **Migration is trivial:**
-1. Change import: `DomeClient` → `DomeBacktestClient` (or native SDK → backtest client)
-2. Add `start_time` and `end_time` to config
+1. **For Dome API users**: Change import `DomeClient` → `DomeBacktestClient`, add `start_time`/`end_time`
+2. **For native SDK users**: Change import (e.g., `ClobClient` → `PolymarketBacktestClient`), add config
 3. Everything else stays **exactly the same**!
 
 Your live trading strategy code will work in backtesting without any modifications to the actual strategy logic! 🎉
 
 **Choose your approach:**
-- **Dome API** - Unified interface for both platforms
-- **Native SDKs** - Drop-in replacements matching real API signatures exactly
+- **Dome API** (`DomeBacktestClient`) - Read-only data access for both platforms (markets, prices, orderbooks, etc.)
+- **Native SDKs** (`PolymarketBacktestClient`, `KalshiBacktestClient`) - For actual order creation and trading (Dome is read-only)
+
+**Typical workflow**: Use Dome for data, native SDK clients for trading.
 

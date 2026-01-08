@@ -2,12 +2,12 @@
 
 A minimal backtesting framework for **Polymarket** and **Kalshi** prediction markets using the [Dome API](https://domeapi.io).
 
-Supports **three ways to trade**:
-1. **Dome API** (read-only) - Use `DomeBacktestClient` with simulated `buy()`/`sell()` methods
-2. **Polymarket Native SDK** - Use `PolymarketBacktestClient` as drop-in replacement for `py-clob-client`
-3. **Kalshi Native SDK** - Use `KalshiBacktestClient` as drop-in replacement for `kalshi` SDK
+## Architecture
 
-All backtest clients support **realistic order types**: Market, Limit, FOK (Fill-or-Kill), GTC (Good-Till-Cancel), and GTD (Good-Till-Date) orders with proper orderbook matching.
+- **Data Reading**: Use `DomeBacktestClient` with Dome's read-only API for market data, prices, orderbooks, etc.
+- **Trading/Orders**: Use `PolymarketBacktestClient` or `KalshiBacktestClient` as drop-in replacements for the official `py-clob-client` and `kalshi` SDKs.
+
+**Note**: Dome's `create_order()`, `buy()`, and `sell()` methods are **mock/simulation methods** included for completeness and future compatibility (Dome itself is read-only). For real trading, use the native SDK clients.
 
 ## How It Works
 
@@ -32,11 +32,17 @@ dome = DomeBacktestClient({
     "end_time": int(datetime(2024, 10, 25).timestamp()),
 })
 
-# Your strategy works the same - just access portfolio via dome.portfolio
+# Your strategy works the same - use create_order() for trading
 async def my_strategy(dome):
-    price = await dome.polymarket.get_market_price({"token_id": "..."})
+    price = await dome.polymarket.markets.get_market_price({"token_id": "..."})
     if dome.portfolio.cash > 100:
-        dome.polymarket.buy(...)
+        await dome.polymarket.markets.create_order(
+            token_id="...",
+            side="YES",
+            size="1000000000",
+            price="0.50",
+            order_type="GTC"
+        )
 
 # Run it!
 result = await dome.run(my_strategy)
@@ -47,8 +53,9 @@ print(f"Return: {result.total_return_pct:.2f}%")
 
 - **Historical Data On-Demand** — Uses Dome API's `at_time` parameter, no local data storage needed
 - **Market Discovery** — `get_markets()` filters results to prevent lookahead bias
-- **Multi-Platform** — Full support for Polymarket and Kalshi via Dome API
-- **Native SDK Support** — Drop-in replacements for `py-clob-client` and `kalshi` SDKs
+- **Multi-Platform Data** — Full support for Polymarket and Kalshi via Dome's read-only API
+- **Trading Support** — Drop-in replacements for `py-clob-client` and `kalshi` SDKs for actual order creation
+- **Mock Trading (Dome)** — Optional `create_order()` methods in Dome client for simulation (Dome itself is read-only)
 - **Realistic Order Types** — Market, Limit, FOK, GTC, GTD orders with orderbook matching
 - **Portfolio Simulation** — Track positions, cash, and P&L without real trades
 - **Drop-in Replacement** — Same API interface as the real SDKs
@@ -64,7 +71,9 @@ pip install -e .
 
 ## Quick Start
 
-### Option 1: Dome API (Recommended for Multi-Platform)
+### Dome API (Data Reading)
+
+Use `DomeBacktestClient` for reading market data (Dome is read-only):
 
 ```python
 import asyncio
@@ -72,25 +81,22 @@ from decimal import Decimal
 from datetime import datetime
 from backtest_service import DomeBacktestClient
 
-TOKEN_ID = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
-
 async def my_strategy(dome):
-    """Your strategy - works in both production and backtest!"""
-    price_data = await dome.polymarket.markets.get_market_price({"token_id": TOKEN_ID})
-    price = Decimal(str(price_data.price))
+    """Read data from Dome, trade via native SDKs"""
+    # Read market data via Dome (read-only)
+    markets = await dome.polymarket.markets.get_markets({
+        "status": "open",
+        "limit": 10
+    })
     
-    # Use create_order() for full control (matches native SDKs)
-    if price < Decimal("0.5") and dome.portfolio.cash > 100:
-        await dome.polymarket.markets.create_order(
-            token_id=TOKEN_ID,
-            side="YES",
-            size="1000000000",
-            price="0.48",
-            order_type="GTC"  # Limit order
-        )
-    
-    # Or use convenience methods
-    # dome.polymarket.markets.buy(TOKEN_ID, Decimal(100), price)
+    for market in markets.markets:
+        price_data = await dome.polymarket.markets.get_market_price({
+            "token_id": market.token_id
+        })
+        print(f"Market: {market.title}, Price: {price_data.price}")
+        
+        # Note: Dome is read-only. For actual trading, use native SDK clients
+        # (see examples below)
 
 async def main():
     dome = DomeBacktestClient({
@@ -103,78 +109,70 @@ async def main():
     
     result = await dome.run(my_strategy)
     print(f"Return: {result.total_return_pct:+.2f}%")
-    print(f"Trades: {len(result.trades)}")
 
 asyncio.run(main())
 ```
 
-### Option 2: Polymarket Native SDK (Drop-in Replacement)
+**Note**: Dome's `create_order()`, `buy()`, and `sell()` are mock methods included for simulation/forward compatibility. Dome itself is read-only. For actual trading, use the native SDK clients below.
 
+### Native SDKs (Trading/Order Creation)
+
+**For actual order creation, use the native SDK clients** as drop-in replacements for the official SDKs:
+
+**For Polymarket (`py-clob-client`):**
 ```python
 import asyncio
 from datetime import datetime
+
+# Live code
+# from py_clob_client import ClobClient
+# client = ClobClient(api_key="...")
+
+# Backtest - just swap import!
 from backtest_service.native import PolymarketBacktestClient
 
-async def my_strategy():
-    # Backtest mode - just swap import!
-    client = PolymarketBacktestClient({
-        "dome_api_key": "YOUR_DOME_API_KEY",
-        "start_time": int(datetime(2024, 10, 24).timestamp()),
-        "end_time": int(datetime(2024, 10, 25).timestamp()),
-        "initial_cash": 10000,
-    })
-    
-    # Same code as live py-clob-client!
-    order = await client.create_order(
-        token_id="0x123...",
-        side="YES",
-        size="1000000000",
-        price="0.65",
-        order_type="GTC"
-    )
-    
-    print(f"Order Status: {order['status']}")
-    print(f"Filled: {order['filled_size']}")
+client = PolymarketBacktestClient({
+    "dome_api_key": "YOUR_DOME_API_KEY",
+    "start_time": int(datetime(2024, 10, 24).timestamp()),
+    "end_time": int(datetime(2024, 10, 25).timestamp()),
+    "initial_cash": 10000,
+})
 
-asyncio.run(my_strategy())
-
-# Live mode - just change config!
-# client = PolymarketBacktestClient({
-#     "mode": "live",
-#     "polymarket_api_key": "YOUR_POLYMARKET_API_KEY",
-# })
+# Same code as live py-clob-client!
+order = await client.create_order(
+    token_id="0x123...",
+    side="YES",
+    size="1000000000",
+    price="0.65",
+    order_type="GTC"
+)
 ```
 
-### Option 3: Kalshi Native SDK (Drop-in Replacement)
-
+**For Kalshi (`kalshi` SDK):**
 ```python
-import asyncio
-from datetime import datetime
+# Live code
+# from kalshi import KalshiClient
+# client = KalshiClient(api_key="...")
+
+# Backtest - just swap import!
 from backtest_service.native import KalshiBacktestClient
 
-async def my_strategy():
-    # Backtest mode
-    client = KalshiBacktestClient({
-        "dome_api_key": "YOUR_DOME_API_KEY",
-        "start_time": int(datetime(2024, 10, 24).timestamp()),
-        "end_time": int(datetime(2024, 10, 25).timestamp()),
-        "initial_cash": 10000,
-    })
-    
-    # Same code as live kalshi SDK!
-    order = await client.create_order(
-        ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
-        side="yes",
-        action="buy",
-        count=100,
-        order_type="limit",
-        yes_price=75  # cents
-    )
-    
-    print(f"Order Status: {order['status']}")
-    print(f"Filled: {order['filled_count']}")
+client = KalshiBacktestClient({
+    "dome_api_key": "YOUR_DOME_API_KEY",
+    "start_time": int(datetime(2024, 10, 24).timestamp()),
+    "end_time": int(datetime(2024, 10, 25).timestamp()),
+    "initial_cash": 10000,
+})
 
-asyncio.run(my_strategy())
+# Same code as live kalshi SDK!
+order = await client.create_order(
+    ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
+    side="yes",
+    action="buy",
+    count=100,
+    order_type="limit",
+    yes_price=75
+)
 ```
 
 
@@ -225,34 +223,32 @@ result = await dome.run(strategy_fn)  # get_prices auto-detected!
 dome.portfolio.cash        # Available cash
 dome.portfolio.positions  # Dict[token_id, quantity]
 
-# Polymarket API (fully supported)
+# Polymarket API - Data Reading (Dome is read-only)
 await dome.polymarket.markets.get_markets(params)
 await dome.polymarket.markets.get_market_price(params)
-await dome.polymarket.markets.create_order(
-    token_id="0x123...",
-    side="YES",
-    size="1000000000",
-    price="0.65",
-    order_type="GTC"  # MARKET, FOK, GTC, or GTD
-)
-# Convenience methods (use create_order() for full control)
-dome.polymarket.markets.buy(token_id, quantity, price)
-dome.polymarket.markets.sell(token_id, quantity, price)
+await dome.polymarket.markets.get_candlesticks(params)
+await dome.polymarket.markets.get_orderbooks(params)
+await dome.polymarket.orders.get_orders(params)
+await dome.polymarket.wallet.get_wallet(params)
+await dome.polymarket.wallet.get_wallet_pnl(params)
+await dome.polymarket.activity.get_activity(params)
 
-# Kalshi API (fully supported)
+# Polymarket - Mock Trading (optional, Dome is read-only)
+# Note: This is a mock method for simulation/forward compatibility
+await dome.polymarket.markets.create_order(...)  # Mock method
+
+# For actual trading, use PolymarketBacktestClient (see native SDK section)
+
+# Kalshi API - Data Reading (Dome is read-only)
 await dome.kalshi.markets.get_markets(params)
 await dome.kalshi.orderbooks.get_orderbooks(params)
-await dome.kalshi.markets.create_order(
-    ticker="KXNFLGAME-25AUG16ARIDEN-ARI",
-    side="yes",
-    action="buy",
-    count=100,
-    order_type="limit",  # limit or market
-    yes_price=75  # cents (0-100)
-)
-# Convenience methods
-dome.kalshi.markets.buy(ticker, quantity, price)
-dome.kalshi.markets.sell(ticker, quantity, price)
+await dome.kalshi.trades.get_trades(params)
+
+# Kalshi - Mock Trading (optional, Dome is read-only)
+# Note: This is a mock method for simulation/forward compatibility
+await dome.kalshi.markets.create_order(...)  # Mock method
+
+# For actual trading, use KalshiBacktestClient (see native SDK section)
 ```
 
 ### BacktestResult
