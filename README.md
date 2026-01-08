@@ -54,6 +54,20 @@ cd backtest-service
 pip install -e .
 ```
 
+### Environment Variables
+
+The library supports loading your API key from environment variables for convenience. Create a `.env` file in the project root:
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env and add your API key
+DOME_API_KEY=your-dome-api-key-here
+```
+
+The API key will be automatically loaded from the `DOME_API_KEY` environment variable if not provided in the config. You can still pass it explicitly in the config if you prefer.
+
 Get your Dome API key from [domeapi.io](https://domeapi.io).
 
 ## Key Features
@@ -99,7 +113,7 @@ markets = await dome.polymarket.markets.get_markets({"status": "open"})
 
 ```python
 dome = DomeBacktestClient({
-    "api_key": "your-api-key",           # Required
+    "api_key": "your-api-key",           # Optional if DOME_API_KEY env var is set
     "start_time": 1729800000,            # Required: Unix timestamp
     "end_time": 1729886400,              # Required: Unix timestamp
     "step": 3600,                         # Optional: seconds between ticks (default: 3600)

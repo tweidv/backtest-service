@@ -11,6 +11,7 @@ setup(
     python_requires=">=3.9",
     install_requires=[
         "dome-api-sdk>=0.1.7",
+        "python-dotenv>=1.0.0",
     ],
     license="MIT",
     keywords=["polymarket", "kalshi", "prediction-markets", "backtesting", "trading"],

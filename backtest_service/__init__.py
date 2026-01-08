@@ -1,3 +1,11 @@
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, skip silently
+    pass
+
 from .api import (
     DomeBacktestClient,
     HistoricalMarket,

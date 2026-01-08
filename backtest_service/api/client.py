@@ -1,5 +1,6 @@
 """Main backtest client that replays historical data."""
 
+import os
 from decimal import Decimal
 from typing import Callable, Optional
 
@@ -37,8 +38,13 @@ class DomeBacktestClient:
             # New style: config dict
             config = config_or_api_key
             self.api_key = config.get("api_key") or config.get("apiKey")
+            # Auto-load from environment if not provided in config
             if not self.api_key:
-                raise ValueError("api_key is required in config")
+                self.api_key = os.environ.get("DOME_API_KEY")
+            if not self.api_key:
+                raise ValueError(
+                    "api_key is required. Provide it in config or set DOME_API_KEY environment variable."
+                )
             
             self.start_time = config.get("start_time") or config.get("startTime")
             self.end_time = config.get("end_time") or config.get("endTime")
@@ -72,6 +78,13 @@ class DomeBacktestClient:
             if clock is None or portfolio is None:
                 raise ValueError("For old-style initialization, clock and portfolio are required")
             self.api_key = config_or_api_key
+            # Auto-load from environment if None or empty string
+            if not self.api_key:
+                self.api_key = os.environ.get("DOME_API_KEY")
+            if not self.api_key:
+                raise ValueError(
+                    "api_key is required. Provide it as argument or set DOME_API_KEY environment variable."
+                )
             self._clock = clock
             self._portfolio = portfolio
             self.start_time = clock.current_time

@@ -53,10 +53,17 @@ class PolymarketBacktestClient:
         from ..simulation.clock import SimulationClock
         from ..simulation.portfolio import Portfolio
         
+        import os
+        
         self.mode = config.get("mode", "backtest")
         self.dome_api_key = config.get("dome_api_key") or config.get("domeApiKey")
+        # Auto-load from environment if not provided in config
         if not self.dome_api_key:
-            raise ValueError("dome_api_key is required in config")
+            self.dome_api_key = os.environ.get("DOME_API_KEY")
+        if not self.dome_api_key:
+            raise ValueError(
+                "dome_api_key is required in config or set DOME_API_KEY environment variable."
+            )
         
         if self.mode == "backtest":
             self.start_time = config.get("start_time") or config.get("startTime")
