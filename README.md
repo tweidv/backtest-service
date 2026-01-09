@@ -1,6 +1,6 @@
 # Backtest Service
 
-A backtesting framework for **Polymarket** and **Kalshi** prediction markets using the [Dome API](https://domeapi.io). Test your trading strategies on historical data without placing real orders.
+A backtesting framework for Polymarket and Kalshi prediction markets built around Dome API. Just swap your import from "from dome_api_sdk import DomeClient" to "from backtest_service import DomeBacktestClient" and set the start and end times to go from a live algorithm to a backtest.
 
 ## Quick Start
 
@@ -32,11 +32,13 @@ async def my_strategy(dome):
         })
         
         if price_data.price < 0.5 and dome.portfolio.cash > 100:
-            # Buy tokens (simulated)
-            dome.polymarket.buy(
-                market.side_a.id,
-                quantity=100,
-                price=price_data.price
+            # Create order (matches Dome API format)
+            order = await dome.polymarket.markets.create_order(
+                token_id=market.side_a.id,
+                side="buy",
+                size="1000000000",
+                price=str(price_data.price),
+                order_type="FOK"
             )
 
 # Run backtest
@@ -56,28 +58,13 @@ pip install -e .
 
 ### Environment Variables
 
-The library supports loading your API key from environment variables for convenience. Create a `.env` file in the project root:
+Create a `.env` file in the project root and add your Dome API key:
 
-```bash
-# Copy the example file
-cp .env.example .env
-
-# Edit .env and add your API key
+```
 DOME_API_KEY=your-dome-api-key-here
 ```
 
-The API key will be automatically loaded from the `DOME_API_KEY` environment variable if not provided in the config. You can still pass it explicitly in the config if you prefer.
-
-Get your Dome API key from [domeapi.io](https://domeapi.io).
-
-## Key Features
-
-- **🔄 Drop-in Replacement** — Same API as `DomeClient`, just swap the import
-- **📊 Historical Data** — No local storage needed, uses Dome API's historical endpoints
-- **🎯 No Lookahead Bias** — Markets are filtered to only include data available at backtest time
-- **💰 Realistic Simulation** — Transaction fees, orderbook matching, portfolio tracking
-- **📈 Progress Streaming** — See API calls and progress in real-time with verbose mode
-- **🔌 Multi-Platform** — Support for Polymarket and Kalshi
+The API key will be automatically loaded from the `DOME_API_KEY` environment variable if not provided in the config. Get your API key from [domeapi.io](https://domeapi.io).
 
 ## How It Works
 
@@ -146,57 +133,9 @@ dome = DomeBacktestClient({
 #     -> price=0.65
 ```
 
-See [docs/UX_FEATURES.md](docs/UX_FEATURES.md) for more details.
-
 ## Trading
 
-### Simple Buy/Sell
-
-For simple buy/sell operations (convenience methods):
-
-```python
-async def strategy(dome):
-    price_data = await dome.polymarket.markets.get_market_price({
-        "token_id": "0x123..."
-    })
-    
-    # Buy tokens (convenience method)
-    dome.polymarket.buy(
-        token_id="0x123...",
-        quantity=100,
-        price=price_data.price
-    )
-    
-    # Sell tokens (convenience method)
-    dome.polymarket.sell(
-        token_id="0x123...",
-        quantity=50,
-        price=0.70
-    )
-```
-
-### Advanced Orders (Dome API Compatible)
-
-For full control with order types matching Dome API:
-
-```python
-async def strategy(dome):
-    # Create order using Dome API format
-    order = await dome.polymarket.markets.create_order(
-        token_id="0x123...",
-        side="buy",        # "buy" or "sell" (Dome API format)
-        size="1000000000", # Order size as string
-        price="0.65",      # Limit price as string (0-1)
-        order_type="GTC"   # "FOK", "FAK", "GTC", or "GTD"
-    )
-    
-    if order["status"] == "matched":
-        print(f"Order filled at {order['fill_price']}")
-```
-
-### Using Advanced Order Types
-
-Create orders with various types matching Dome API:
+Create orders using Dome API format to match production:
 
 ```python
 async def strategy(dome):
@@ -205,31 +144,25 @@ async def strategy(dome):
         "token_id": "0x123..."
     })
     
-    # Create limit order (GTC - Good Till Cancel)
+    # Create order (matches Dome API router.placeOrder())
     order = await dome.polymarket.markets.create_order(
         token_id="0x123...",
         side="buy",           # "buy" or "sell"
-        size="1000000000",    # Order size in base units
-        price="0.65",         # Limit price (0-1)
-        order_type="GTC"      # Order type
+        size="1000000000",    # Order size as string
+        price="0.65",         # Limit price as string (0-1)
+        order_type="GTC"      # "FOK", "FAK", "GTC", or "GTD"
     )
     
     # Check order status
     if order["status"] == "matched":
-        print("Order filled!")
-    
-    # Order types:
-    # - "FOK" - Fill Or Kill (must fill completely or reject)
-    # - "FAK" - Fill And Kill (fill what you can, cancel rest)
-    # - "GTC" - Good Till Cancel (stays on book until filled)
-    # - "GTD" - Good Till Date (expires at specified time)
+        print(f"Order filled at {order['fill_price']}")
 ```
 
 **Order Types:**
-- **FOK** (Fill Or Kill): Order must fill completely or be rejected immediately
-- **FAK** (Fill And Kill): Fill what you can at limit price, cancel remainder
-- **GTC** (Good Till Cancel): Order stays on book until filled or cancelled
-- **GTD** (Good Till Date): Order expires at specified `expiration_time_seconds`
+- `"FOK"` (Fill Or Kill): Must fill completely or reject immediately
+- `"FAK"` (Fill And Kill): Fill what you can at limit price, cancel remainder
+- `"GTC"` (Good Till Cancel): Stays on book until filled or cancelled
+- `"GTD"` (Good Till Date): Expires at specified `expiration_time_seconds`
 
 **Order Status:**
 - `"matched"` - Order was filled
@@ -237,6 +170,43 @@ async def strategy(dome):
 - `"rejected"` - Order was rejected (e.g., insufficient liquidity)
 - `"cancelled"` - Order was cancelled
 - `"expired"` - Order expired (GTD orders)
+
+### Native SDK Compatibility
+
+You can also use the native SDK clients for compatibility with `py-clob-client` (Polymarket) or `kalshi` SDK (Kalshi):
+
+```python
+from backtest_service.native import PolymarketBacktestClient, KalshiBacktestClient
+
+# Polymarket - matches py-clob-client API
+polymarket = PolymarketBacktestClient({
+    "dome_api_key": "...",
+    "start_time": ...,
+    "end_time": ...,
+})
+order = await polymarket.create_order(
+    token_id="0x123...",
+    side="YES",  # py-clob-client format
+    size="1000000000",
+    price="0.65",
+    order_type="GTC"
+)
+
+# Kalshi - matches kalshi SDK API
+kalshi = KalshiBacktestClient({
+    "dome_api_key": "...",
+    "start_time": ...,
+    "end_time": ...,
+})
+order = await kalshi.create_order(
+    ticker="KXNFLGAME-...",
+    side="yes",
+    action="buy",
+    count=100,
+    order_type="limit",
+    yes_price=75
+)
+```
 
 ## Market Discovery
 
@@ -375,59 +345,8 @@ result.total_interest_earned     # Total interest (Kalshi)
 result.net_return_after_fees_pct # Net return after fees
 ```
 
-## Examples
-
-See the `tests/` directory for example strategies:
-- `test_advanced_strategy.py` - Momentum strategy example
-- `test_full_backtest.py` - Complete backtest with SMA crossover
-- `test_arbitrage_discovery.py` - Arbitrage finding strategy
-
-## Converting Live Code to Backtest
-
-**Just 2 changes needed:**
-
-1. **Change import:**
-   ```python
-   # Live
-   from dome_api_sdk import DomeClient
-   
-   # Backtest
-   from backtest_service import DomeBacktestClient
-   ```
-
-2. **Add time window:**
-   ```python
-   # Live
-   dome = DomeClient({"api_key": "..."})
-   
-   # Backtest
-   dome = DomeBacktestClient({
-       "api_key": "...",
-       "start_time": int(datetime(2024, 11, 1).timestamp()),
-       "end_time": int(datetime(2024, 11, 2).timestamp()),
-   })
-   ```
-
-**That's it!** Your strategy code stays exactly the same.
-
-## Limitations
-
-### Kalshi Support
-
-Kalshi support has some limitations due to Dome API constraints:
-- Portfolio valuation uses orderbook data (may be less accurate than Polymarket)
-- Some historical data may be incomplete
-
-For full Kalshi backtesting, consider using `KalshiBacktestClient` from `backtest_service.native`.
-
 ## Rate Limiting
 
 The service includes built-in rate limiting (1.1s between API calls) to comply with Dome API limits. Rate limit errors are automatically retried with exponential backoff.
 
-## License
-
-MIT
-
-## Contributing
-
-Contributions welcome! Please open an issue or pull request.
+**Note:** Rate limiting behavior is planned to be updated in a future release.
