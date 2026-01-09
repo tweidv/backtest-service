@@ -36,7 +36,7 @@ async def my_strategy(dome):
             order = await dome.polymarket.markets.create_order(
                 token_id=market.side_a.id,
                 side="buy",
-                size="1000000000",
+                size="100000",
                 price=str(price_data.price),
                 order_type="FOK"
             )
@@ -47,11 +47,17 @@ print(f"Return: {result.total_return_pct:.2f}%")
 print(f"Final Value: ${result.final_value:.2f}")
 ```
 
+## Requirements
+
+- Python 3.9 or higher
+- Dome API key ([get one here](https://domeapi.io))
+
+The `dome-api-sdk` dependency will be installed automatically when you install this package.
+
 ## Installation
 
 ```bash
-pip install dome-api-sdk
-git clone https://github.com/yourusername/backtest-service.git
+git clone https://github.com/tweidv/backtest-service.git
 cd backtest-service
 pip install -e .
 ```
@@ -68,7 +74,14 @@ The API key will be automatically loaded from the `DOME_API_KEY` environment var
 
 ## How It Works
 
-The framework automatically injects historical timestamps into all API calls, replaying market data as if you were trading in the past. Your strategy code stays the same — just swap `DomeClient` for `DomeBacktestClient`.
+The framework simulates trading in the past by maintaining an internal simulation clock (`at_time`) that tracks the current backtest timestamp. Every API call automatically injects this timestamp, ensuring you only see data that existed at that point in time. The framework:
+
+1. **Time Simulation**: Maintains a simulation clock starting at `start_time` that advances by `step` seconds each tick
+2. **Historical Data Injection**: Every API call automatically uses the current simulation time, ensuring you only see markets, prices, and orderbooks that existed at that timestamp
+3. **Lookahead Prevention**: Market resolution status (`winning_side`, `was_resolved`) is filtered to `None` if the market wasn't resolved yet, preventing you from using future information
+4. **Portfolio Simulation**: Tracks cash, positions, fees, and interest exactly as they would have occurred in real trading
+
+Your strategy code stays the same — just swap `DomeClient` for `DomeBacktestClient` and add time bounds.
 
 ### Example: Converting Live Code to Backtest
 
@@ -103,26 +116,44 @@ dome = DomeBacktestClient({
     "api_key": "your-api-key",           # Optional if DOME_API_KEY env var is set
     "start_time": 1729800000,            # Required: Unix timestamp
     "end_time": 1729886400,              # Required: Unix timestamp
-    "step": 3600,                         # Optional: seconds between ticks (default: 3600)
+    "step": 3600,                         # Optional: seconds between ticks (default: 3600, minimum: 1)
     "initial_cash": 10000,                # Optional: starting capital (default: 10000)
     "enable_fees": True,                  # Optional: transaction fees (default: True)
     "enable_interest": False,             # Optional: Kalshi interest (default: False)
-    "verbose": False,                     # Optional: show progress (default: False)
-    "log_level": "INFO",                  # Optional: DEBUG, INFO, WARNING, ERROR
+    "verbose": False,                     # Optional: enable progress output (default: False)
+    "log_level": "INFO",                  # Optional: logging detail level (default: "INFO")
 })
 ```
 
-### Verbose Mode (See What's Happening)
+- **What is a tick?** A tick is one execution of your strategy function at a specific timestamp. The simulation clock advances forward by `step` seconds after each tick, and your strategy runs again at the new 
 
-Enable `verbose=True` to see real-time progress:
+### Verbose Mode and Logging
+
+The `verbose` and `log_level` parameters control how much information is displayed during a backtest:
+
+#### Verbose Mode (`verbose`)
+
+When `verbose=True`, the framework displays:
+- **Tick Progress**: Shows the current tick number, timestamp, portfolio cash, total value, and number of positions at the start of each tick
+- **API Calls**: Lists all API calls made during the backtest (controlled by `log_level`)
+
+#### Log Level (`log_level`)
+
+The `log_level` parameter controls the detail of API call logging when `verbose=True`:
+
+- **`"DEBUG"`**: Shows all API calls **and** their responses/results. Use this when you want to see exactly what data is being returned.
+- **`"INFO"`**: Shows API calls but **not** their responses. Use this for a cleaner output that still shows what your strategy is doing.
+- **`"WARNING"`** / **`"ERROR"`**: Suppresses API call logging (reserved for actual warnings/errors).
+
+**Example with `verbose=True` and `log_level="DEBUG"`:**
 
 ```python
 dome = DomeBacktestClient({
     "api_key": "...",
     "start_time": ...,
     "end_time": ...,
-    "verbose": True,  # Enable streaming output
-    "log_level": "INFO",  # DEBUG for more detail
+    "verbose": True,      # Enable progress output
+    "log_level": "DEBUG", # Show API calls AND responses
 })
 
 # Output:
@@ -133,7 +164,40 @@ dome = DomeBacktestClient({
 #     -> price=0.65
 ```
 
+**Example with `verbose=True` and `log_level="INFO"` (default):**
+
+```python
+dome = DomeBacktestClient({
+    "verbose": True,
+    "log_level": "INFO",  # Or omit since INFO is default
+})
+
+# Output:
+# [Tick 1/56] 2024-11-01 00:00:00 | Cash: $10,000.00 | Value: $10,000.00 | Positions: 0
+#   [API] 00:00:00 polymarket.PolymarketMarketsNamespace.get_markets({'status': 'open'})
+#   [API] 00:00:01 polymarket.PolymarketMarketsNamespace.get_market_price({'token_id': '...'})
+# (API responses not shown)
+```
+
+**Recommendation:** Use `verbose=True` with `log_level="INFO"` for development and debugging. Switch to `log_level="DEBUG"` when you need to inspect API responses in detail. Set `verbose=False` for production runs where you only care about the final results.
+
 ## Trading
+
+### Strategy Function Signature
+
+Your strategy function should be an async function that takes one parameter:
+
+```python
+async def strategy(dome):
+    # Access portfolio via dome.portfolio
+    cash = dome.portfolio.cash
+    positions = dome.portfolio.positions
+    # ... your trading logic
+```
+
+**Note:** The framework also supports `async def strategy(dome, portfolio)` for backward compatibility, but using `dome.portfolio` is the recommended approach since it matches the live `DomeClient` API.
+
+### Creating Orders
 
 Create orders using Dome API format to match production:
 
@@ -307,6 +371,7 @@ dome = DomeBacktestClient({
 })
 
 # Run backtest
+# strategy_fn should be: async def strategy_fn(dome)
 result = await dome.run(strategy_fn)
 
 # Access portfolio
@@ -347,6 +412,6 @@ result.net_return_after_fees_pct # Net return after fees
 
 ## Rate Limiting
 
-The service includes built-in rate limiting (1.1s between API calls) to comply with Dome API limits. Rate limit errors are automatically retried with exponential backoff.
+The service includes built-in rate limiting (1.1s between API calls) to comply with Dome API free tier limits. Rate limit errors are automatically retried with exponential backoff.
 
-**Note:** Rate limiting behavior is planned to be updated in a future release.
+**Note:** Support for configurable rate limits matching different Dome API paid tiers (with higher rate limits) is planned for mid-January 2025.
