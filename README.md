@@ -182,6 +182,61 @@ dome = DomeBacktestClient({
 
 **Recommendation:** Use `verbose=True` with `log_level="INFO"` for development and debugging. Switch to `log_level="DEBUG"` when you need to inspect API responses in detail. Set `verbose=False` for production runs where you only care about the final results.
 
+## API Reference
+
+### Dome API SDK Methods
+
+All Dome SDK methods are supported with automatic historical time filtering. Timestamps are automatically capped at backtest time to prevent lookahead bias.
+
+**Polymarket:**
+- `dome.polymarket.markets.get_markets(params)`
+- `dome.polymarket.markets.get_market_price(params)`
+- `dome.polymarket.markets.get_candlesticks(params)`
+- `dome.polymarket.markets.get_orderbooks(params)` - Historical data from Oct 14, 2025
+- `dome.polymarket.markets.create_order(...)` - Supports FOK, FAK, GTC, GTD order types
+- `dome.polymarket.orders.get_orders(params)`
+- `dome.polymarket.wallet.get_wallet(params)`
+- `dome.polymarket.wallet.get_wallet_pnl(params)`
+- `dome.polymarket.activity.get_activity(params)`
+
+**Kalshi:**
+- `dome.kalshi.markets.get_markets(params)`
+- `dome.kalshi.orderbooks.get_orderbooks(params)` - Historical data from Oct 29, 2025
+- `dome.kalshi.trades.get_trades(params)`
+
+**Matching Markets:**
+- `dome.matching_markets.get_matching_markets(params)`
+- `dome.matching_markets.get_matching_markets_by_sport(params)`
+
+**Crypto Prices:**
+- `dome.crypto_prices.binance.get_binance_prices(params)`
+- `dome.crypto_prices.chainlink.get_chainlink_prices(params)`
+
+### Backtest-Specific Methods
+
+**Client Methods:**
+- `dome.run(strategy_fn)` - Run backtest with your strategy function
+- `dome.portfolio` - Access portfolio state
+
+**Portfolio Methods:**
+- `dome.portfolio.cash` - Available cash
+- `dome.portfolio.positions` - Dict[token_id, quantity]
+- `dome.portfolio.get_position(token_id)` - Get Position object with avg_price, cost_basis
+- `dome.portfolio.get_position_pnl(token_id, current_price)` - Calculate unrealized P&L
+
+### Native SDK Clients
+
+For compatibility with `py-clob-client` (Polymarket) and `kalshi` SDK (Kalshi):
+
+**PolymarketBacktestClient:**
+- `client.create_order(...)` - Matches py-clob-client API (side: "YES"/"NO", order_type: "MARKET"/"FOK"/"GTC"/"GTD")
+- `client.portfolio` - Access portfolio state
+
+**KalshiBacktestClient:**
+- `client.create_order(...)` - Matches kalshi SDK API (side: "yes"/"no", action: "buy"/"sell", order_type: "limit"/"market")
+- `client.get_positions()` - Get current positions
+- `client.portfolio` - Access portfolio state
+
 ## Trading
 
 ### Strategy Function Signature
@@ -226,7 +281,7 @@ async def strategy(dome):
 **Order Types:**
 - `"FOK"` (Fill Or Kill): Must fill completely or reject immediately
 - `"FAK"` (Fill And Kill): Fill what you can at limit price, cancel remainder
-- `"GTC"` (Good Till Cancel): Stays on book until filled or cancelled
+- `"GTC"` (Good Till Cancel): Stays on book until filled or cancelled (pending orders are automatically checked each tick against historical prices)
 - `"GTD"` (Good Till Date): Expires at specified `expiration_time_seconds`
 
 **Order Status:**
@@ -273,7 +328,18 @@ order = await kalshi.create_order(
 )
 ```
 
-## Market Discovery
+## Position Tracking
+
+```python
+dome.portfolio.cash                    # Available cash
+dome.portfolio.positions               # Dict[token_id, quantity]
+dome.portfolio.get_position(token_id)  # Get Position object with avg_price, cost_basis
+dome.portfolio.get_position_pnl(token_id, current_price)  # Calculate unrealized P&L
+```
+
+## Reading Data from Dome API
+
+### Market Discovery
 
 Discover markets dynamically during backtests without lookahead bias:
 
@@ -354,50 +420,6 @@ dome = DomeBacktestClient({
 
 Interest accrues daily on cash balances and position values.
 
-## API Reference
-
-### DomeBacktestClient
-
-```python
-# Initialize
-dome = DomeBacktestClient({
-    "api_key": "your-key",
-    "start_time": 1729800000,
-    "end_time": 1729886400,
-    "step": 3600,              # Optional
-    "initial_cash": 10000,     # Optional
-    "enable_fees": True,       # Optional
-    "enable_interest": False,  # Optional
-    "verbose": False,          # Optional
-})
-
-# Run backtest
-# strategy_fn should be: async def strategy_fn(dome)
-result = await dome.run(strategy_fn)
-
-# Access portfolio
-dome.portfolio.cash        # Available cash
-dome.portfolio.positions   # Dict[token_id, quantity]
-
-# Polymarket API
-await dome.polymarket.markets.get_markets(params)
-await dome.polymarket.markets.get_market_price(params)
-await dome.polymarket.markets.get_candlesticks(params)
-await dome.polymarket.markets.get_orderbooks(params)
-await dome.polymarket.markets.create_order({
-    "token_id": "...",
-    "side": "buy",           # "buy" or "sell"
-    "size": "1000000000",
-    "price": "0.65",
-    "order_type": "GTC"      # "FOK", "FAK", "GTC", "GTD"
-})
-
-# Kalshi API
-await dome.kalshi.markets.get_markets(params)
-await dome.kalshi.orderbooks.get_orderbooks(params)
-await dome.kalshi.trades.get_trades(params)
-```
-
 ### BacktestResult
 
 ```python
@@ -452,3 +474,51 @@ dome = DomeBacktestClient({
 ```
 
 The rate limiter uses a sliding window approach to track both per-second and per-10-second limits, ensuring compliance with Dome API rate limits across all tiers.
+
+## Coming Soon
+
+The following features are under consideration for future releases:
+
+### WebSocket Event Simulation
+
+Simulate WebSocket events for copy trading strategies that monitor wallet addresses and replicate trades. This would allow backtesting strategies that react to order events from specific users in real-time.
+
+**Proposed API:**
+```python
+async def strategy(dome):
+    subscription = await dome.polymarket.websocket.subscribe({
+        "platform": "polymarket",
+        "version": 1,
+        "type": "orders",
+        "filters": {"users": ["0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d"]}
+    })
+    
+    async for event in dome.polymarket.websocket.events():
+        if event.type == "order":
+            await dome.polymarket.markets.create_order(...)
+```
+
+### Class-Based Strategy Adapters
+
+Easier integration with class-based strategy architectures (common pattern in trading systems). Automatically convert class-based strategies with `execute()` methods to async function interface.
+
+**Proposed API:**
+```python
+from backtest_service.adapters import StrategyAdapter
+
+strategy_instance = MeanReversionStrategy()
+strategy_instance.window_size = 20
+
+# Automatically converts class to async function
+result = await dome.run(strategy_instance, market_id="...")
+```
+
+### Performance Attribution
+
+Enhanced performance analysis with market-level attribution, risk metrics, and detailed statistics.
+
+**Proposed Features:**
+- Performance breakdown by market
+- Risk metrics (Sharpe ratio, max drawdown, win rate)
+- Trade-level attribution
+- Time-period analysis
