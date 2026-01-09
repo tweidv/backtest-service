@@ -241,17 +241,29 @@ For compatibility with `py-clob-client` (Polymarket) and `kalshi` SDK (Kalshi):
 
 ### Strategy Function Signature
 
-Your strategy function should be an async function that takes one parameter:
+Your strategy can be a function or class instance:
 
 ```python
+# Function strategy
 async def strategy(dome):
-    # Access portfolio via dome.portfolio
     cash = dome.portfolio.cash
-    positions = dome.portfolio.positions
-    # ... your trading logic
+    # ... trading logic
+
+# Class-based strategy (state persists between ticks)
+class MyStrategy:
+    def __init__(self):
+        self.price_history = []
+    
+    async def execute(self, dome):
+        price = await dome.polymarket.markets.get_market_price(...)
+        self.price_history.append(price.price)
+        # ... trading logic
+
+strategy = MyStrategy()
+result = await dome.run(strategy)
 ```
 
-**Note:** The framework also supports `async def strategy(dome, portfolio)` for backward compatibility, but using `dome.portfolio` is the recommended approach since it matches the live `DomeClient` API.
+**Method detection:** `override -> __call__ -> execute -> run`. Auto-detects sync/async. Use `method="custom"` to specify explicitly.
 
 ### Creating Orders
 
@@ -500,18 +512,7 @@ async def strategy(dome):
 
 ### Class-Based Strategy Adapters
 
-Easier integration with class-based strategy architectures (common pattern in trading systems). Automatically convert class-based strategies with `execute()` methods to async function interface.
-
-**Proposed API:**
-```python
-from backtest_service.adapters import StrategyAdapter
-
-strategy_instance = MeanReversionStrategy()
-strategy_instance.window_size = 20
-
-# Automatically converts class to async function
-result = await dome.run(strategy_instance, market_id="...")
-```
+✅ **Implemented!** Class-based strategies are now supported. See the [Strategy Function Signature](#strategy-function-signature) section above for details.
 
 ### Performance Attribution
 

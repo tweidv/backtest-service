@@ -167,33 +167,138 @@ class DomeBacktestClient:
                     api_obj._on_api_call = self.on_api_call
                     api_obj._dome_client = self
     
-    async def run(self, strategy: Callable, get_prices: Optional[Callable] = None, end_time: Optional[int] = None):
+    def _adapt_strategy(self, strategy, method: Optional[str] = None):
+        """
+        Adapt a class-based strategy to async function interface.
+        
+        Detection priority:
+        1. Explicit method parameter (if provided)
+        2. __call__ (if class is callable)
+        3. execute()
+        4. run()
+        
+        Auto-detects sync vs async methods.
+        
+        Args:
+            strategy: Function or class instance
+            method: Optional explicit method name to use
+        
+        Returns:
+            Async function that takes (dome) parameter
+        """
+        import inspect
+        
+        # If it's already a function, return as-is
+        if inspect.isfunction(strategy) or inspect.iscoroutinefunction(strategy):
+            # Verify it takes (dome) signature
+            sig = inspect.signature(strategy)
+            param_count = len(sig.parameters)
+            if param_count != 1:
+                raise ValueError(
+                    f"Strategy function must take exactly 1 parameter (dome), "
+                    f"got {param_count} parameters. Signature: {sig}"
+                )
+            return strategy
+        
+        # If it's a class instance, find the method
+        if not isinstance(strategy, type) and hasattr(strategy, '__class__'):
+            method_to_use = None
+            
+            # Try explicit method first
+            if method:
+                if hasattr(strategy, method):
+                    method_to_use = getattr(strategy, method)
+                else:
+                    raise ValueError(
+                        f"Strategy class {type(strategy).__name__} does not have method '{method}'. "
+                        f"Available methods: {[m for m in dir(strategy) if not m.startswith('_')]}"
+                    )
+            # Try __call__
+            # Check if class defines __call__ (not just inheriting from object)
+            elif '__call__' in type(strategy).__dict__:
+                method_to_use = strategy.__call__
+            # Try execute()
+            elif hasattr(strategy, 'execute'):
+                method_to_use = getattr(strategy, 'execute')
+            # Try run()
+            elif hasattr(strategy, 'run'):
+                method_to_use = getattr(strategy, 'run')
+            else:
+                raise ValueError(
+                    f"Strategy class {type(strategy).__name__} must have one of: "
+                    f"__call__, execute, or run method. "
+                    f"Or provide explicit method name via method parameter."
+                )
+            
+            # Verify method signature takes (self, dome)
+            sig = inspect.signature(method_to_use)
+            param_count = len(sig.parameters)
+            if param_count != 2:  # self + dome
+                raise ValueError(
+                    f"Strategy method must take exactly 2 parameters (self, dome), "
+                    f"got {param_count} parameters. Signature: {sig}"
+                )
+            
+            # Check if method is async
+            is_async = inspect.iscoroutinefunction(method_to_use)
+            
+            # Create wrapper that always calls with (dome)
+            # Note: method_to_use is bound to the instance, so we call it directly
+            if is_async:
+                async def wrapper(dome):
+                    return await method_to_use(dome)
+            else:
+                async def wrapper(dome):
+                    return method_to_use(dome)
+            
+            return wrapper
+        
+        raise TypeError(
+            f"Strategy must be a function or class instance, got {type(strategy)}"
+        )
+
+    async def run(self, strategy: Callable, get_prices: Optional[Callable] = None, end_time: Optional[int] = None, method: Optional[str] = None):
         """
         Run backtest with your strategy.
         
         Args:
-            strategy: async function that takes (dome) or (dome, portfolio)
+            strategy: async function that takes (dome), or class instance with execute/run/__call__ method
                      Your existing strategy code - uses dome.polymarket.markets.*, dome.kalshi.markets.*, etc.
                      Matches Dome's exact structure: dome.polymarket.markets.get_markets(), etc.
             get_prices: optional function(dome) -> {token_id: price}
                        If not provided, auto-detects from portfolio positions
             end_time: optional Unix timestamp to override config end_time
                       (useful for old-style initialization)
+            method: optional method name for class-based strategies (overrides auto-detection)
+                    Auto-detection priority: __call__ -> execute -> run
         
         Returns:
             BacktestResult with performance metrics
             
         Example:
+            # Function strategy
             async def my_strategy(dome):
                 price = await dome.polymarket.markets.get_market_price({"token_id": "..."})
                 if dome.portfolio.cash > 100:
-                    dome.portfolio.buy(...)  # Trading methods are on portfolio
+                    await dome.polymarket.markets.create_order(...)
             
             result = await dome.run(my_strategy)
-            print(f"Return: {result.total_return_pct:.2f}%")
+            
+            # Class-based strategy
+            class MyStrategy:
+                async def execute(self, dome):
+                    # State persists between ticks
+                    self.counter = getattr(self, 'counter', 0) + 1
+                    # ...
+            
+            strategy = MyStrategy()
+            result = await dome.run(strategy)
         """
         from ..models.result import BacktestResult
         import inspect
+        
+        # Adapt strategy (handles both functions and class instances)
+        strategy = self._adapt_strategy(strategy, method)
         
         # Use provided end_time or fall back to config
         effective_end_time = end_time if end_time is not None else self.end_time
@@ -303,10 +408,6 @@ class DomeBacktestClient:
         
         equity_curve = []
         
-        # Check strategy signature - support both (dome) and (dome, portfolio)
-        sig = inspect.signature(strategy)
-        param_count = len(sig.parameters)
-        
         # Calculate total ticks for progress
         total_ticks = ((effective_end_time - self.start_time) // self.step) + 1
         current_tick = 0
@@ -329,11 +430,8 @@ class DomeBacktestClient:
             if self.on_tick:
                 await self.on_tick(self, self._portfolio)
             
-            # Run strategy with appropriate signature
-            if param_count == 1:
-                await strategy(self)
-            else:
-                await strategy(self, self._portfolio)
+            # Run strategy (always with dome parameter)
+            await strategy(self)
             
             # Process pending limit orders (GTC/GTD)
             if hasattr(self.polymarket.markets, '_order_manager'):

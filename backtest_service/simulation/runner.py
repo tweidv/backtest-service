@@ -33,7 +33,7 @@ class BacktestRunner:
         Run backtest.
         
         Args:
-            strategy: async fn(dome, portfolio) called each tick
+            strategy: async fn(dome) called each tick
             get_prices: fn(dome) -> {token_id: price} for valuing positions
         """
         # Import here to avoid circular import
@@ -44,11 +44,14 @@ class BacktestRunner:
         portfolio = Portfolio(self.initial_cash, enable_fees=True, enable_interest=False)
         dome = DomeBacktestClient(self.api_key, clock, portfolio)
         
+        # Adapt strategy if it's a class instance (use dome's adapter method)
+        strategy = dome._adapt_strategy(strategy)
+        
         equity_curve = []
 
         while clock.current_time <= self.end_time:
-            # Run strategy
-            await strategy(dome, portfolio)
+            # Run strategy (always with dome parameter)
+            await strategy(dome)
             
             # Record equity
             prices = await get_prices(dome)
