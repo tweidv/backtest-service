@@ -114,7 +114,8 @@ class KalshiTradesNamespace(BasePlatformAPI):
                     filtered_response = copy.copy(response)
                     filtered_response.trades = filtered_trades
                     return filtered_response
-            except:
+            except (AttributeError, TypeError):
+                # Fallback if copy fails - create simple response object
                 class FilteredResponse:
                     def __init__(self, trades, pagination=None):
                         self.trades = trades

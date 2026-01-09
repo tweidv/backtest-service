@@ -128,7 +128,8 @@ class PolymarketWalletNamespace(BasePlatformAPI):
                             at_time
                         )
                     return filtered_response
-            except:
+            except (AttributeError, TypeError):
+                # Fallback if copy fails - create simple response object
                 class FilteredResponse:
                     def __init__(self, pnl_over_time, granularity=None, start_time=None, end_time=None, wallet_address=None):
                         self.pnl_over_time = pnl_over_time

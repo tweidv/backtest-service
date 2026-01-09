@@ -1,19 +1,31 @@
 from setuptools import setup, find_packages
 
+# Read README for long description
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
 setup(
     name="backtest_service",
     version="0.3.0",
     description="Minimal backtesting for Polymarket/Kalshi prediction markets via Dome API",
-    long_description=open("README.md").read(),
+    long_description=long_description,
     long_description_content_type="text/markdown",
+    author="tweidv",
+    author_email="",  # TODO: Add your email address
     url="https://github.com/tweidv/backtest-service",
-    packages=find_packages(),
+    project_urls={
+        "Bug Tracker": "https://github.com/tweidv/backtest-service/issues",
+        "Documentation": "https://github.com/tweidv/backtest-service#readme",
+        "Source Code": "https://github.com/tweidv/backtest-service",
+    },
+    packages=find_packages(exclude=["tests", "tests.*", "reference-dome-docs"]),
     python_requires=">=3.9",
     install_requires=[
         "dome-api-sdk>=0.1.7",
         "python-dotenv>=1.0.0",
     ],
     license="MIT",
+    license_files=["LICENSE"],
     keywords=["polymarket", "kalshi", "prediction-markets", "backtesting", "trading"],
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -26,6 +38,7 @@ setup(
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Topic :: Office/Business :: Financial :: Investment",
+        "Operating System :: OS Independent",
     ],
 )
 

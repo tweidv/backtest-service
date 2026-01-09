@@ -98,7 +98,8 @@ class MatchingMarketsNamespace:
                     filtered_response = copy.copy(response)
                     filtered_response.markets = filtered_markets
                     return filtered_response
-            except:
+            except (AttributeError, TypeError):
+                # Fallback if copy fails - create simple response object
                 class FilteredResponse:
                     def __init__(self, markets):
                         self.markets = markets
@@ -171,7 +172,8 @@ class MatchingMarketsNamespace:
                     filtered_response = copy.copy(response)
                     filtered_response.markets = filtered_markets
                     return filtered_response
-            except:
+            except (AttributeError, TypeError):
+                # Fallback if copy fails - create simple response object
                 class FilteredResponse:
                     def __init__(self, markets):
                         self.markets = markets

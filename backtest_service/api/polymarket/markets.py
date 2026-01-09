@@ -292,7 +292,8 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
                     filtered_response = copy.copy(response)
                     filtered_response.candlesticks = filtered_candlesticks
                     return filtered_response
-            except:
+            except (AttributeError, TypeError):
+                # Fallback if copy fails - create simple response object
                 class FilteredResponse:
                     def __init__(self, candlesticks):
                         self.candlesticks = candlesticks
@@ -352,7 +353,8 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
                     filtered_response = copy.copy(response)
                     filtered_response.snapshots = filtered_snapshots
                     return filtered_response
-            except:
+            except (AttributeError, TypeError):
+                # Fallback if copy fails - create simple response object
                 class FilteredResponse:
                     def __init__(self, snapshots, pagination_key=None):
                         self.snapshots = snapshots

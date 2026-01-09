@@ -82,7 +82,8 @@ class ChainlinkNamespace(BasePlatformAPI):
                     filtered_response = copy.copy(response)
                     filtered_response.prices = filtered_prices
                     return filtered_response
-            except:
+            except (AttributeError, TypeError):
+                # Fallback if copy fails - create simple response object
                 class FilteredResponse:
                     def __init__(self, prices, pagination_key=None):
                         self.prices = prices

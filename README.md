@@ -126,7 +126,7 @@ dome = DomeBacktestClient({
 })
 ```
 
-- **What is a tick?** A tick is one execution of your strategy function at a specific timestamp. The simulation clock advances forward by `step` seconds after each tick, and your strategy runs again at the new 
+- **What is a tick?** A tick is one execution of your strategy function at a specific timestamp. The simulation clock advances forward by `step` seconds after each tick, and your strategy runs again at the new timestamp.
 
 ### Verbose Mode and Logging
 

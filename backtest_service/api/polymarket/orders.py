@@ -80,7 +80,8 @@ class PolymarketOrdersNamespace(BasePlatformAPI):
                     filtered_response = copy.copy(response)
                     filtered_response.orders = filtered_orders
                     return filtered_response
-            except:
+            except (AttributeError, TypeError):
+                # Fallback if copy fails - create simple response object
                 class FilteredResponse:
                     def __init__(self, orders, pagination=None):
                         self.orders = orders

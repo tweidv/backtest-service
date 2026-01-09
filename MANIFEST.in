@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+recursive-exclude tests *
+recursive-exclude reference-dome-docs *
+recursive-exclude __pycache__ *
+recursive-exclude *.pyc *
+global-exclude *.py[co]
+
