@@ -4,16 +4,13 @@
 
 1. **PyPI Account**: Create an account at https://pypi.org/account/register/
 2. **API Token**: Generate an API token at https://pypi.org/manage/account/token/
-3. **Author Email**: Update `setup.py` with your email address (currently placeholder)
+3. **Author Email**: Already configured in `setup.py`
 
 ## Before Publishing
 
-1. **Update Author Email** in `setup.py`:
-   ```python
-   author_email="your-email@example.com",  # Replace with your actual email
-   ```
+1. **Update Author Email** in `setup.py`: Already set to `tweidevrieze@gmail.com`
 
-2. **Verify Version** in `setup.py` (currently `0.3.0`)
+2. **Verify Version** in `setup.py` (currently `0.1.0`)
 
 3. **Test the Build** (already done):
    ```bash
@@ -36,7 +33,7 @@
    ```
 3. Test installation:
    ```bash
-   pip install --index-url https://test.pypi.org/simple/ backtest-service
+   pip install --index-url https://test.pypi.org/simple/ emulo-backtest
    ```
 
 ### Production PyPI
@@ -60,13 +57,13 @@ You'll be prompted for:
 ## Version Bumping
 
 For future releases, update the version in `setup.py`:
-- Patch: `0.3.0` → `0.3.1` (bug fixes)
-- Minor: `0.3.0` → `0.4.0` (new features)
-- Major: `0.3.0` → `1.0.0` (breaking changes)
+- Patch: `0.1.0` → `0.1.1` (bug fixes)
+- Minor: `0.1.0` → `0.2.0` (new features)
+- Major: `0.1.0` → `1.0.0` (breaking changes)
 
 ## Notes
 
-- The package name on PyPI will be `backtest-service` (hyphenated)
-- Installation: `pip install backtest-service`
-- Import: `from backtest_service import DomeBacktestClient`
+- The package name on PyPI will be `emulo-backtest` (hyphenated)
+- Installation: `pip install emulo-backtest`
+- Import: `from emulo import DomeBacktestClient`
 

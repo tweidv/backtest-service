@@ -25,7 +25,7 @@ class PolymarketBacktestClient:
         order = await client.create_order(...)
         
         # Backtest - just swap import!
-        from backtest_service.native import PolymarketBacktestClient
+        from emulo.native import PolymarketBacktestClient
         client = PolymarketBacktestClient({
             "dome_api_key": "...",  # For historical data via Dome
             "start_time": 1729800000,
@@ -33,7 +33,7 @@ class PolymarketBacktestClient:
             "initial_cash": 10000,
         })
         
-        # Same code works! ✅
+        # Same code works!
         order = await client.create_order(...)
     """
     

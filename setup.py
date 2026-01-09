@@ -5,18 +5,18 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="backtest_service",
-    version="0.3.0",
+    name="emulo-backtest",
+    version="0.1.0",
     description="Minimal backtesting for Polymarket/Kalshi prediction markets via Dome API",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="tweidv",
-    author_email="",  # TODO: Add your email address
-    url="https://github.com/tweidv/backtest-service",
+    author_email="tweidevrieze@gmail.com",
+    url="https://github.com/tweidv/emulo-backtest",
     project_urls={
-        "Bug Tracker": "https://github.com/tweidv/backtest-service/issues",
-        "Documentation": "https://github.com/tweidv/backtest-service#readme",
-        "Source Code": "https://github.com/tweidv/backtest-service",
+        "Bug Tracker": "https://github.com/tweidv/emulo-backtest/issues",
+        "Documentation": "https://github.com/tweidv/emulo-backtest#readme",
+        "Source Code": "https://github.com/tweidv/emulo-backtest",
     },
     packages=find_packages(exclude=["tests", "tests.*", "reference-dome-docs"]),
     python_requires=">=3.9",

@@ -1,11 +1,11 @@
 # Backtest Service
 
-A backtesting framework for Polymarket and Kalshi prediction markets built around Dome API. Just swap your import from "from dome_api_sdk import DomeClient" to "from backtest_service import DomeBacktestClient" and set the start and end times to go from a live algorithm to a backtest.
+A backtesting framework for Polymarket and Kalshi prediction markets built around Dome API. Just swap your import from "from dome_api_sdk import DomeClient" to "from emulo import DomeBacktestClient" and set the start and end times to go from a live algorithm to a backtest.
 
 ## Quick Start
 
 ```python
-from backtest_service import DomeBacktestClient
+from emulo import DomeBacktestClient
 from datetime import datetime
 
 # Initialize backtest client
@@ -57,8 +57,8 @@ The `dome-api-sdk` dependency will be installed automatically when you install t
 ## Installation
 
 ```bash
-git clone https://github.com/tweidv/backtest-service.git
-cd backtest-service
+git clone https://github.com/tweidv/emulo-backtest.git
+cd emulo-backtest
 pip install -e .
 ```
 
@@ -95,7 +95,7 @@ markets = await dome.polymarket.markets.get_markets({"status": "open"})
 
 **Backtest Code:**
 ```python
-from backtest_service import DomeBacktestClient
+from emulo import DomeBacktestClient
 from datetime import datetime
 
 dome = DomeBacktestClient({
@@ -104,7 +104,7 @@ dome = DomeBacktestClient({
     "end_time": int(datetime(2024, 11, 2).timestamp()),
 })
 markets = await dome.polymarket.markets.get_markets({"status": "open"})
-# Same API! ✅
+# Same API!
 ```
 
 ## Configuration
@@ -310,7 +310,7 @@ async def strategy(dome):
 You can also use the native SDK clients for compatibility with `py-clob-client` (Polymarket) or `kalshi` SDK (Kalshi):
 
 ```python
-from backtest_service.native import PolymarketBacktestClient, KalshiBacktestClient
+from emulo.native import PolymarketBacktestClient, KalshiBacktestClient
 
 # Polymarket - matches py-clob-client API
 polymarket = PolymarketBacktestClient({
@@ -491,7 +491,7 @@ The rate limiter uses a sliding window approach to track both per-second and per
 
 ## WebSocket Event Simulation
 
-✅ **Implemented!** Simulate WebSocket events for copy trading strategies that monitor wallet addresses and replicate trades. Events are pre-fetched at backtest start and replayed chronologically as the backtest clock advances.
+**Implemented!** Simulate WebSocket events for copy trading strategies that monitor wallet addresses and replicate trades. Events are pre-fetched at backtest start and replayed chronologically as the backtest clock advances.
 
 ### Usage
 
@@ -556,7 +556,7 @@ async def handle_order_event(dome, event):
 
 ### Limitations
 
-⚠️ **Important Limitations:**
+**Important Limitations:**
 
 1. **Wildcard subscriptions not supported**: The `users: ["*"]` wildcard filter is not supported because the orders API requires explicit filters. You must specify individual wallet addresses.
 
