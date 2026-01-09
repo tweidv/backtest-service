@@ -1,6 +1,6 @@
 """Matching markets namespace: dome.matching_markets.*"""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from ..base_api import BasePlatformAPI
 
@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
     from ...simulation.clock import SimulationClock
     from ...simulation.portfolio import Portfolio
+    from ..rate_limiter import RateLimiter
 
 
 class MatchingMarketsNamespace:
@@ -18,12 +19,22 @@ class MatchingMarketsNamespace:
         real_client: "DomeClient",
         clock: "SimulationClock",
         portfolio: "Portfolio",
-        rate_limit: float = 1.1
+        rate_limiter: Union["RateLimiter", float, None] = None
     ):
         self._real_client = real_client
         self._clock = clock
         self._portfolio = portfolio
-        self._rate_limit = rate_limit
+        
+        # Handle rate limiter: accept RateLimiter, float (backward compat), or None (default to free tier)
+        if rate_limiter is None:
+            from ..rate_limiter import RateLimiter
+            self._rate_limiter = RateLimiter(tier="free")
+        elif isinstance(rate_limiter, float):
+            # Backward compatibility: convert old float rate_limit to free tier
+            from ..rate_limiter import RateLimiter
+            self._rate_limiter = RateLimiter(tier="free")
+        else:
+            self._rate_limiter = rate_limiter
 
     async def get_matching_markets(self, params: dict) -> dict:
         """
@@ -174,7 +185,8 @@ class MatchingMarketsNamespace:
         import inspect
         
         for attempt in range(max_retries):
-            await asyncio.sleep(self._rate_limit)
+            # Rate limiting: wait until we can make a request
+            await self._rate_limiter.acquire()
             
             try:
                 result = method(params)

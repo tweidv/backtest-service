@@ -1,6 +1,6 @@
 """Kalshi main namespace: dome.kalshi.*"""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from .markets import KalshiMarketsNamespace
 from .orderbooks import KalshiOrderbooksNamespace
@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
     from ...simulation.clock import SimulationClock
     from ...simulation.portfolio import Portfolio
+    from ..rate_limiter import RateLimiter
 
 
 class KalshiNamespace:
@@ -20,11 +21,11 @@ class KalshiNamespace:
         real_client: "DomeClient",
         clock: "SimulationClock",
         portfolio: "Portfolio",
-        rate_limit: float = 1.1
+        rate_limiter: Union["RateLimiter", float, None] = None
     ):
-        self.markets = KalshiMarketsNamespace(real_client, clock, portfolio, rate_limit)
-        self.orderbooks = KalshiOrderbooksNamespace(real_client, clock, portfolio, rate_limit)
-        self.trades = KalshiTradesNamespace(real_client, clock, portfolio, rate_limit)
+        self.markets = KalshiMarketsNamespace(real_client, clock, portfolio, rate_limiter)
+        self.orderbooks = KalshiOrderbooksNamespace(real_client, clock, portfolio, rate_limiter)
+        self.trades = KalshiTradesNamespace(real_client, clock, portfolio, rate_limiter)
         
         # Store references for convenience methods
         self._portfolio = portfolio

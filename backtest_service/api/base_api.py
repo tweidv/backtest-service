@@ -9,12 +9,13 @@ API namespaces inherit from. It includes:
 
 import asyncio
 import inspect
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
     from ..simulation.clock import SimulationClock
     from ..simulation.portfolio import Portfolio
+    from .rate_limiter import RateLimiter
 
 
 class BasePlatformAPI:
@@ -26,14 +27,25 @@ class BasePlatformAPI:
         real_client: "DomeClient",
         clock: "SimulationClock",
         portfolio: "Portfolio",
-        rate_limit: float = 1.1
+        rate_limiter: Union["RateLimiter", float, None] = None
     ):
         self.platform = platform
         self._client = real_client
         self._real_api = None  # Will be set by subclasses
         self._clock = clock
         self._portfolio = portfolio
-        self._rate_limit = rate_limit  # seconds between API calls
+        
+        # Handle rate limiter: accept RateLimiter, float (backward compat), or None (default to free tier)
+        if rate_limiter is None:
+            from .rate_limiter import RateLimiter
+            self._rate_limiter = RateLimiter(tier="free")
+        elif isinstance(rate_limiter, float):
+            # Backward compatibility: convert old float rate_limit to a simple limiter
+            # For 1.1s delay, that's roughly 0.9 QPS, so use free tier
+            from .rate_limiter import RateLimiter
+            self._rate_limiter = RateLimiter(tier="free")
+        else:
+            self._rate_limiter = rate_limiter
         
         # UX/Logging (set by DomeBacktestClient)
         self._verbose = False
@@ -88,8 +100,8 @@ class BasePlatformAPI:
             print(f"  [API] {current_time_str} {self.platform}.{endpoint_name}({params_summary})")
         
         for attempt in range(max_retries):
-            # Rate limiting delay
-            await asyncio.sleep(self._rate_limit)
+            # Rate limiting: wait until we can make a request
+            await self._rate_limiter.acquire()
             
             try:
                 result = method(params)

@@ -120,6 +120,7 @@ dome = DomeBacktestClient({
     "initial_cash": 10000,                # Optional: starting capital (default: 10000)
     "enable_fees": True,                  # Optional: transaction fees (default: True)
     "enable_interest": False,             # Optional: Kalshi interest (default: False)
+    "rate_limit_tier": "free",            # Optional: "free", "dev", or "enterprise" (default: "free")
     "verbose": False,                     # Optional: enable progress output (default: False)
     "log_level": "INFO",                  # Optional: logging detail level (default: "INFO")
 })
@@ -412,6 +413,42 @@ result.net_return_after_fees_pct # Net return after fees
 
 ## Rate Limiting
 
-The service includes built-in rate limiting (1.1s between API calls) to comply with Dome API free tier limits. Rate limit errors are automatically retried with exponential backoff.
+The service includes built-in rate limiting that automatically enforces Dome API tier limits. Rate limit errors are automatically retried with exponential backoff.
 
-**Note:** Support for configurable rate limits matching different Dome API paid tiers (with higher rate limits) is planned for mid-January 2025.
+### Configuration
+
+Rate limiting is configured via the `rate_limit_tier` parameter (or `rateLimitTier` for camelCase):
+
+```python
+dome = DomeBacktestClient({
+    "api_key": "...",
+    "start_time": ...,
+    "end_time": ...,
+    "rate_limit_tier": "free",  # "free", "dev", or "enterprise"
+})
+```
+
+**Available Tiers:**
+
+| Tier | Queries Per Second | Queries Per 10 Seconds |
+|------|-------------------|------------------------|
+| **Free** (default) | 1 | 10 |
+| **Dev** | 100 | 500 |
+| **Enterprise** | Custom | Custom |
+
+### Custom Limits (Enterprise)
+
+For Enterprise tier or custom limits, specify `qps` and `per_10s`:
+
+```python
+dome = DomeBacktestClient({
+    "api_key": "...",
+    "start_time": ...,
+    "end_time": ...,
+    "rate_limit_tier": "enterprise",
+    "rate_limit_qps": 200,          # Custom QPS limit
+    "rate_limit_per_10s": 1000,      # Custom per-10-second limit
+})
+```
+
+The rate limiter uses a sliding window approach to track both per-second and per-10-second limits, ensuring compliance with Dome API rate limits across all tiers.

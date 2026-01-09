@@ -1,7 +1,7 @@
 """Polymarket markets namespace: dome.polymarket.markets.*"""
 
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from ..base_api import BasePlatformAPI
 from ..models import HistoricalMarket, HistoricalMarketsResponse
@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
     from ...simulation.clock import SimulationClock
     from ...simulation.portfolio import Portfolio
+    from ..rate_limiter import RateLimiter
 
 
 class PolymarketMarketsNamespace(BasePlatformAPI):
@@ -20,9 +21,9 @@ class PolymarketMarketsNamespace(BasePlatformAPI):
         real_client: "DomeClient",
         clock: "SimulationClock",
         portfolio: "Portfolio",
-        rate_limit: float = 1.1
+        rate_limiter: Union["RateLimiter", float, None] = None
     ):
-        super().__init__("polymarket", real_client, clock, portfolio, rate_limit)
+        super().__init__("polymarket", real_client, clock, portfolio, rate_limiter)
         self._real_api = real_client.polymarket
         self._real_client = real_client  # Store for orderbook access
         # Note: _verbose, _log_level, _on_api_call are set by DomeBacktestClient

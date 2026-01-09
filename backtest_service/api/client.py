@@ -65,6 +65,17 @@ class DomeBacktestClient:
             self.on_tick = config.get("on_tick", None)  # Callback: async fn(dome, portfolio)
             self.on_api_call = config.get("on_api_call", None)  # Callback: async fn(endpoint, params, response)
             
+            # Rate limiting configuration
+            from .rate_limiter import RateLimiter
+            rate_limit_tier = config.get("rate_limit_tier", config.get("rateLimitTier", "free"))
+            rate_limit_qps = config.get("rate_limit_qps", config.get("rateLimitQps"))
+            rate_limit_per_10s = config.get("rate_limit_per_10s", config.get("rateLimitPer10s"))
+            self._rate_limiter = RateLimiter(
+                tier=rate_limit_tier,
+                qps=rate_limit_qps,
+                per_10s=rate_limit_per_10s
+            )
+            
             # Create internal components
             self._clock = SimulationClock(self.start_time)
             self._portfolio = Portfolio(
@@ -96,6 +107,10 @@ class DomeBacktestClient:
             self.log_level = "INFO"
             self.on_tick = None
             self.on_api_call = None
+            
+            # Default rate limiter for old style (free tier)
+            from .rate_limiter import RateLimiter
+            self._rate_limiter = RateLimiter(tier="free")
         
         self._real_client = DomeClient({"api_key": self.api_key})
         
@@ -103,10 +118,10 @@ class DomeBacktestClient:
         self.portfolio = self._portfolio
         
         # Setup platform APIs - matches Dome's nested structure exactly
-        self.polymarket = PolymarketNamespace(self._real_client, self._clock, self._portfolio)
-        self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio)
-        self.matching_markets = MatchingMarketsNamespace(self._real_client, self._clock, self._portfolio)
-        self.crypto_prices = CryptoPricesNamespace(self._real_client, self._clock, self._portfolio)
+        self.polymarket = PolymarketNamespace(self._real_client, self._clock, self._portfolio, self._rate_limiter)
+        self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio, self._rate_limiter)
+        self.matching_markets = MatchingMarketsNamespace(self._real_client, self._clock, self._portfolio, self._rate_limiter)
+        self.crypto_prices = CryptoPricesNamespace(self._real_client, self._clock, self._portfolio, self._rate_limiter)
         
         # Set verbose/logging on all namespace APIs (they inherit from BasePlatformAPI)
         # Note: This will be called again in run() after reset, but setting here for immediate use
@@ -194,10 +209,10 @@ class DomeBacktestClient:
             interest_apy=self.interest_apy
         )
         self.portfolio = self._portfolio  # Update reference
-        self.polymarket = PolymarketNamespace(self._real_client, self._clock, self._portfolio)
-        self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio)
-        self.matching_markets = MatchingMarketsNamespace(self._real_client, self._clock, self._portfolio)
-        self.crypto_prices = CryptoPricesNamespace(self._real_client, self._clock, self._portfolio)
+        self.polymarket = PolymarketNamespace(self._real_client, self._clock, self._portfolio, self._rate_limiter)
+        self.kalshi = KalshiNamespace(self._real_client, self._clock, self._portfolio, self._rate_limiter)
+        self.matching_markets = MatchingMarketsNamespace(self._real_client, self._clock, self._portfolio, self._rate_limiter)
+        self.crypto_prices = CryptoPricesNamespace(self._real_client, self._clock, self._portfolio, self._rate_limiter)
         
         # Re-apply verbose settings after reset
         self._set_verbose_on_namespaces()

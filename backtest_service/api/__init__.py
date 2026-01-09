@@ -8,6 +8,7 @@ from .models import (
     HistoricalKalshiMarketsResponse,
 )
 from .base_api import BasePlatformAPI
+from .rate_limiter import RateLimiter
 from .polymarket import PolymarketNamespace
 from .kalshi import KalshiNamespace
 from .matching_markets import MatchingMarketsNamespace
@@ -20,6 +21,7 @@ __all__ = [
     'HistoricalKalshiMarket',
     'HistoricalKalshiMarketsResponse',
     'BasePlatformAPI',
+    'RateLimiter',
     'PolymarketNamespace',
     'KalshiNamespace',
     'MatchingMarketsNamespace',

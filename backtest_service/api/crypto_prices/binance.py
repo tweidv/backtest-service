@@ -1,6 +1,6 @@
 """Binance crypto prices namespace: dome.crypto_prices.binance.*"""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from ..base_api import BasePlatformAPI
 
@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
     from ...simulation.clock import SimulationClock
     from ...simulation.portfolio import Portfolio
+    from ..rate_limiter import RateLimiter
 
 
 class BinanceNamespace(BasePlatformAPI):
@@ -18,9 +19,9 @@ class BinanceNamespace(BasePlatformAPI):
         real_client: "DomeClient",
         clock: "SimulationClock",
         portfolio: "Portfolio",
-        rate_limit: float = 1.1
+        rate_limiter: Union["RateLimiter", float, None] = None
     ):
-        super().__init__("crypto", real_client, clock, portfolio, rate_limit)
+        super().__init__("crypto", real_client, clock, portfolio, rate_limiter)
         self._real_api = real_client.crypto_prices
 
     async def get_binance_prices(self, params: dict) -> dict:

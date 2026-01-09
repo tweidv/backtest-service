@@ -1,6 +1,6 @@
 """Crypto prices main namespace: dome.crypto_prices.*"""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from .binance import BinanceNamespace
 from .chainlink import ChainlinkNamespace
@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
     from ...simulation.clock import SimulationClock
     from ...simulation.portfolio import Portfolio
+    from ..rate_limiter import RateLimiter
 
 
 class CryptoPricesNamespace:
@@ -19,8 +20,8 @@ class CryptoPricesNamespace:
         real_client: "DomeClient",
         clock: "SimulationClock",
         portfolio: "Portfolio",
-        rate_limit: float = 1.1
+        rate_limiter: Union["RateLimiter", float, None] = None
     ):
-        self.binance = BinanceNamespace(real_client, clock, portfolio, rate_limit)
-        self.chainlink = ChainlinkNamespace(real_client, clock, portfolio, rate_limit)
+        self.binance = BinanceNamespace(real_client, clock, portfolio, rate_limiter)
+        self.chainlink = ChainlinkNamespace(real_client, clock, portfolio, rate_limiter)
 

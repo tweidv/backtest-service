@@ -1,6 +1,6 @@
 """Polymarket main namespace: dome.polymarket.*"""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from .markets import PolymarketMarketsNamespace
 from .orders import PolymarketOrdersNamespace
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
     from ...simulation.clock import SimulationClock
     from ...simulation.portfolio import Portfolio
+    from ..rate_limiter import RateLimiter
 
 
 class PolymarketNamespace:
@@ -21,12 +22,12 @@ class PolymarketNamespace:
         real_client: "DomeClient",
         clock: "SimulationClock",
         portfolio: "Portfolio",
-        rate_limit: float = 1.1
+        rate_limiter: Union["RateLimiter", float, None] = None
     ):
-        self.markets = PolymarketMarketsNamespace(real_client, clock, portfolio, rate_limit)
-        self.orders = PolymarketOrdersNamespace(real_client, clock, portfolio, rate_limit)
-        self.wallet = PolymarketWalletNamespace(real_client, clock, portfolio, rate_limit)
-        self.activity = PolymarketActivityNamespace(real_client, clock, portfolio, rate_limit)
+        self.markets = PolymarketMarketsNamespace(real_client, clock, portfolio, rate_limiter)
+        self.orders = PolymarketOrdersNamespace(real_client, clock, portfolio, rate_limiter)
+        self.wallet = PolymarketWalletNamespace(real_client, clock, portfolio, rate_limiter)
+        self.activity = PolymarketActivityNamespace(real_client, clock, portfolio, rate_limiter)
         # Note: websocket not implemented yet (would be for real-time, not backtesting)
         
         # Store references for convenience methods

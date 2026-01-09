@@ -1,6 +1,6 @@
 """Kalshi orderbooks namespace: dome.kalshi.orderbooks.*"""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from ..base_api import BasePlatformAPI
 
@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
     from ...simulation.clock import SimulationClock
     from ...simulation.portfolio import Portfolio
+    from ..rate_limiter import RateLimiter
 
 
 class KalshiOrderbooksNamespace(BasePlatformAPI):
@@ -18,9 +19,9 @@ class KalshiOrderbooksNamespace(BasePlatformAPI):
         real_client: "DomeClient",
         clock: "SimulationClock",
         portfolio: "Portfolio",
-        rate_limit: float = 1.1
+        rate_limiter: Union["RateLimiter", float, None] = None
     ):
-        super().__init__("kalshi", real_client, clock, portfolio, rate_limit)
+        super().__init__("kalshi", real_client, clock, portfolio, rate_limiter)
         self._real_api = real_client.kalshi
 
     async def get_orderbooks(self, params: dict) -> dict:
