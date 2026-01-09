@@ -18,7 +18,7 @@ setup(
         "Documentation": "https://github.com/tweidv/emulo-backtest#readme",
         "Source Code": "https://github.com/tweidv/emulo-backtest",
     },
-    packages=find_packages(exclude=["tests", "tests.*", "reference-dome-docs"]),
+    packages=find_packages(exclude=["tests", "tests.*"]),
     python_requires=">=3.9",
     install_requires=[
         "dome-api-sdk>=0.1.7",

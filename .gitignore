@@ -33,8 +33,5 @@ Thumbs.db
 # Tests (local only)
 tests/
 
-# Reference documentation (not needed in repo)
-reference-dome-docs/
-
 # Build artifacts
 *.egg-info/
