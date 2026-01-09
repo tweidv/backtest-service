@@ -430,6 +430,9 @@ class DomeBacktestClient:
             if self.on_tick:
                 await self.on_tick(self, self._portfolio)
             
+            # Process WebSocket events for current time
+            await self.polymarket.websocket.process_events()
+            
             # Run strategy (always with dome parameter)
             await strategy(self)
             

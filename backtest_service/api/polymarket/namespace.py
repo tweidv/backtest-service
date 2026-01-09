@@ -6,6 +6,7 @@ from .markets import PolymarketMarketsNamespace
 from .orders import PolymarketOrdersNamespace
 from .wallet import PolymarketWalletNamespace
 from .activity import PolymarketActivityNamespace
+from .websocket import PolymarketWebSocketNamespace
 
 if TYPE_CHECKING:
     from dome_api_sdk import DomeClient
@@ -28,7 +29,7 @@ class PolymarketNamespace:
         self.orders = PolymarketOrdersNamespace(real_client, clock, portfolio, rate_limiter)
         self.wallet = PolymarketWalletNamespace(real_client, clock, portfolio, rate_limiter)
         self.activity = PolymarketActivityNamespace(real_client, clock, portfolio, rate_limiter)
-        # Note: websocket not implemented yet (would be for real-time, not backtesting)
+        self.websocket = PolymarketWebSocketNamespace(real_client, clock, portfolio, rate_limiter)
         
         # Store references for convenience methods
         self._portfolio = portfolio

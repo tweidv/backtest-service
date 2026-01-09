@@ -198,6 +198,8 @@ All Dome SDK methods are supported with automatic historical time filtering. Tim
 - `dome.polymarket.wallet.get_wallet(params)`
 - `dome.polymarket.wallet.get_wallet_pnl(params)`
 - `dome.polymarket.activity.get_activity(params)`
+- `dome.polymarket.websocket.subscribe(request, on_event)` - Simulate WebSocket order events
+- `dome.polymarket.websocket.unsubscribe(subscription_id)` - Unsubscribe from events
 
 **Kalshi:**
 - `dome.kalshi.markets.get_markets(params)`
@@ -487,39 +489,86 @@ dome = DomeBacktestClient({
 
 The rate limiter uses a sliding window approach to track both per-second and per-10-second limits, ensuring compliance with Dome API rate limits across all tiers.
 
-## Coming Soon
+## WebSocket Event Simulation
 
-The following features are under consideration for future releases:
+✅ **Implemented!** Simulate WebSocket events for copy trading strategies that monitor wallet addresses and replicate trades. Events are pre-fetched at backtest start and replayed chronologically as the backtest clock advances.
 
-### WebSocket Event Simulation
+### Usage
 
-Simulate WebSocket events for copy trading strategies that monitor wallet addresses and replicate trades. This would allow backtesting strategies that react to order events from specific users in real-time.
-
-**Proposed API:**
 ```python
 async def strategy(dome):
-    subscription = await dome.polymarket.websocket.subscribe({
-        "platform": "polymarket",
-        "version": 1,
-        "type": "orders",
-        "filters": {"users": ["0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d"]}
-    })
+    # Subscribe to order events from specific users (matches Dome SDK API)
+    subscription_id = await dome.polymarket.websocket.subscribe(
+        users=["0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d"],
+        on_event=lambda event: handle_order_event(dome, event)
+    )
     
-    async for event in dome.polymarket.websocket.events():
-        if event.type == "order":
-            await dome.polymarket.markets.create_order(...)
+    # Events are automatically emitted as clock advances
+    # Your on_event callback will be called for each matching order
+
+async def handle_order_event(dome, event):
+    if event.type == "event":
+        order_data = event.data
+        # React to order event - e.g., copy the trade
+        if order_data["side"] == "BUY":
+            await dome.polymarket.markets.create_order(
+                token_id=order_data["token_id"],
+                side="buy",
+                size=str(order_data["shares"]),
+                price=str(order_data["price"]),
+                order_type="FOK"
+            )
 ```
 
-### Class-Based Strategy Adapters
+### Supported Filters
 
-✅ **Implemented!** Class-based strategies are now supported. See the [Strategy Function Signature](#strategy-function-signature) section above for details.
+- **Users**: Track orders from specific wallet addresses
+  ```python
+  subscription_id = await dome.polymarket.websocket.subscribe(
+      users=["0x123...", "0x456..."],
+      on_event=handle_event
+  )
+  ```
 
-### Performance Attribution
+- **Condition IDs**: Track orders for specific market conditions
+  ```python
+  subscription_id = await dome.polymarket.websocket.subscribe(
+      condition_ids=["0xabc...", "0xdef..."],
+      on_event=handle_event
+  )
+  ```
 
-Enhanced performance analysis with market-level attribution, risk metrics, and detailed statistics.
+- **Market Slugs**: Track orders in specific markets
+  ```python
+  subscription_id = await dome.polymarket.websocket.subscribe(
+      market_slugs=["market-slug-1", "market-slug-2"],
+      on_event=handle_event
+  )
+  ```
 
-**Proposed Features:**
-- Performance breakdown by market
-- Risk metrics (Sharpe ratio, max drawdown, win rate)
-- Trade-level attribution
-- Time-period analysis
+### Additional Methods
+
+- `update(subscription_id, users=..., condition_ids=..., market_slugs=...)` - Update subscription filters
+- `unsubscribe(subscription_id)` - Unsubscribe from events
+- `get_active_subscriptions()` - Get all active subscriptions
+- `connect()` / `disconnect()` - Connection management (no-op for backtesting)
+- Context manager support: `async with dome.polymarket.websocket: ...`
+
+### Limitations
+
+⚠️ **Important Limitations:**
+
+1. **Wildcard subscriptions not supported**: The `users: ["*"]` wildcard filter is not supported because the orders API requires explicit filters. You must specify individual wallet addresses.
+
+2. **Multiple filter types**: If you need to track multiple users/condition_ids/market_slugs, the implementation makes multiple API calls (one per filter value) and merges the results. This is efficient but may be slower for very large filter lists.
+
+3. **Pre-fetching**: All matching orders are fetched at subscription time. For large time ranges or very active wallets, this may require significant API calls and memory.
+
+4. **Time range**: Events are fetched for a 1-year window around the backtest start time. Events outside this window won't be included.
+
+### How It Works
+
+1. **Pre-fetch**: When you subscribe, all matching orders are fetched from the orders API
+2. **Sort**: Events are sorted chronologically by timestamp
+3. **Replay**: As the backtest clock advances, events are emitted when their timestamp matches the current backtest time
+4. **No lookahead**: Events are only emitted up to the current backtest time, preventing lookahead bias

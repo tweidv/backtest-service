@@ -5,6 +5,7 @@ from .markets import PolymarketMarketsNamespace
 from .orders import PolymarketOrdersNamespace
 from .wallet import PolymarketWalletNamespace
 from .activity import PolymarketActivityNamespace
+from .websocket import PolymarketWebSocketNamespace
 
 __all__ = [
     'PolymarketNamespace',
@@ -12,5 +13,6 @@ __all__ = [
     'PolymarketOrdersNamespace',
     'PolymarketWalletNamespace',
     'PolymarketActivityNamespace',
+    'PolymarketWebSocketNamespace',
 ]
 
